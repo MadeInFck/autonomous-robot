@@ -241,8 +241,8 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 
 ## TODO
 
-- [ ] Valider câblage moteurs et sens de rotation
-- [ ] Tester interface joystick sur smartphone
+- [x] Valider câblage moteurs et sens de rotation
+- [x] Tester interface joystick sur smartphone
 - [ ] Calibrer IMU BMI160 au repos
 - [ ] Valider réception GPS en extérieur (premier fix)
 - [ ] Écrire tests unitaires (`pi5/tests/`)
