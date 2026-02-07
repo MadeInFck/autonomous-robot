@@ -1,0 +1,71 @@
+# Configuration Robot Mecanum Autonome
+# Raspberry Pi 5 + Raspberry Pi Pico
+
+# Communication UART (Pi5 ↔ Pico)
+uart:
+  port: /dev/ttyAMA3     # UART3 sur Pi5
+  baudrate: 115200
+  protocol: stx_etx      # Protocole avec STX/ETX et CRC-8
+
+# Pins UART3 sur Pi5
+# GPIO8 (broche 24) = TX → GP1 (Pico RX)
+# GPIO9 (broche 21) = RX ← GP0 (Pico TX)
+# GND (broche 20) = GND
+
+# Configuration moteurs Mecanum
+# Carte driver: HW-249 (4x pont en H)
+motors:
+  type: mecanum
+  pwm_frequency: 1000    # Hz
+  max_speed: 100         # %
+  driver: hw249
+
+  # Disposition des roues (vue de dessus)
+  #   FL ──── FR
+  #   │  ↑   │
+  #   │ AVANT│
+  #   RL ──── RR
+
+  pins:
+    # Front Left (avant gauche)
+    FL_in1: 17           # GPIO17 - avant
+    FL_in2: 27           # GPIO27 - arrière
+
+    # Front Right (avant droit)
+    FR_in1: 22           # GPIO22 - avant
+    FR_in2: 23           # GPIO23 - arrière
+
+    # Rear Left (arrière gauche)
+    RL_in1: 24           # GPIO24 - avant
+    RL_in2: 25           # GPIO25 - arrière
+
+    # Rear Right (arrière droit)
+    RR_in1: 5            # GPIO5 - avant
+    RR_in2: 6            # GPIO6 - arrière
+
+# Navigation autonome
+navigation:
+  waypoint_radius: 3.0   # mètres - rayon de validation waypoint
+  max_speed: 1.0         # m/s
+  min_speed: 0.2         # m/s
+  pid:
+    kp: 1.0
+    ki: 0.1
+    kd: 0.05
+
+# Serveur web (télémétrie + contrôle)
+telemetry:
+  web_server_port: 8080
+  update_rate: 10        # Hz
+  enable_logging: true
+
+# Capteurs (sur Pico)
+sensors:
+  gps:
+    type: neo_6m
+    uart: 0              # UART0 du Pico
+    baudrate: 9600
+  imu:
+    type: bmi160
+    i2c_bus: 1           # I2C1 du Pico
+    address: 0x68

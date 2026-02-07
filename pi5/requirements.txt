@@ -1,0 +1,24 @@
+# Serial/UART Communication
+pyserial==3.5
+
+# GPIO Control (Pi5 compatible)
+lgpio>=0.2.2.0
+
+# Web Server
+flask==3.0.0
+flask-cors==4.0.0
+
+# Configuration
+PyYAML==6.0.1
+
+# GPS Math
+geopy==2.4.1
+
+# Control Systems
+simple-pid==2.0.0
+
+# Logging & Monitoring
+loguru==0.7.2
+
+# Testing
+pytest==7.4.3
