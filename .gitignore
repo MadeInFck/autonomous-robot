@@ -127,3 +127,4 @@ dmypy.json
 config/sensor_calibration.json
 *.log
 *.db
+.claude/
