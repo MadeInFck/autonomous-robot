@@ -230,11 +230,11 @@ class RobotApp:
 
 
 def load_web_config():
-    """Charge la config auth + TLS depuis robot_config.yaml"""
-    config_path = os.path.join(PROJECT_ROOT, 'config', 'robot_config.yaml')
+    """Charge la config auth + TLS depuis secrets.yaml"""
+    secrets_path = os.path.join(PROJECT_ROOT, 'config', 'secrets.yaml')
     try:
         import yaml
-        with open(config_path) as f:
+        with open(secrets_path) as f:
             cfg = yaml.safe_load(f)
         auth = cfg.get('auth', {})
         tls = cfg.get('tls', {})

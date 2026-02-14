@@ -61,20 +61,8 @@ navigation:
     ki: 0.05
     kd: 0.1
 
-# Authentification interface web (HTTP Basic Auth)
-# Pour generer un nouveau hash:
-#   python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MON_MDP'))"
-auth:
-  username: admin
-  password_hash: "REDACTED_HASH"
-
-# TLS / HTTPS (certificat auto-signe)
-# Generer le certificat:
-#   openssl req -x509 -newkey rsa:2048 -keyout config/ssl/key.pem -out config/ssl/cert.pem -days 3650 -nodes -subj '/CN=robot-mecanum'
-# Si les fichiers n'existent pas, le serveur demarre en HTTP
-tls:
-  cert: config/ssl/cert.pem
-  key: config/ssl/key.pem
+# Authentification et TLS : voir config/secrets.yaml
+# (fichier ignore par git, copier secrets.yaml.example pour commencer)
 
 # Serveur web (télémétrie + contrôle)
 telemetry:

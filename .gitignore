@@ -125,6 +125,7 @@ dmypy.json
 
 # Project specific
 config/sensor_calibration.json
+config/secrets.yaml
 config/ssl/
 *.log
 *.db

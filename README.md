@@ -138,9 +138,16 @@ Options :
 
 ## Sécurité
 
+Les secrets (auth, TLS) sont dans `config/secrets.yaml` (ignoré par git). Pour configurer :
+
+```bash
+cp config/secrets.yaml.example config/secrets.yaml
+# Editer secrets.yaml avec vos identifiants
+```
+
 ### Authentification
 
-L'interface web est protégée par HTTP Basic Auth. Les identifiants (`username` et `password_hash`) sont configurés dans `config/robot_config.yaml`.
+L'interface web est protégée par HTTP Basic Auth. Les identifiants (`username` et `password_hash`) sont configurés dans `config/secrets.yaml`.
 
 Pour générer un hash de mot de passe :
 
@@ -165,7 +172,7 @@ openssl req -x509 -newkey rsa:2048 \
   -subj '/CN=robot-mecanum'
 ```
 
-La configuration TLS dans `config/robot_config.yaml` :
+La configuration TLS dans `config/secrets.yaml` :
 
 ```yaml
 tls:
@@ -180,7 +187,9 @@ Si les fichiers de certificat n'existent pas, le serveur démarre automatiquemen
 ```
 autonomous-robot/
 ├── config/
-│   ├── robot_config.yaml          # Configuration GPIO, UART, moteurs, auth, TLS
+│   ├── robot_config.yaml          # Configuration GPIO, UART, moteurs, LiDAR, nav
+│   ├── secrets.yaml               # Auth + TLS (ignoré par git)
+│   ├── secrets.yaml.example       # Template pour secrets.yaml
 │   ├── patrol_route.json          # Waypoints de patrouille (créé automatiquement)
 │   ├── sensor_calibration.json    # Offsets calibration IMU et GPS
 │   └── ssl/                       # Certificats TLS (ignoré par git)
