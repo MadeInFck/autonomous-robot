@@ -102,6 +102,11 @@ HTML_TEMPLATE = """
 
         .footer-space { height: 20px; flex-shrink: 0; }
 
+        .toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.85em; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .toast.show { opacity: 1; }
+        .toast.error { background: rgba(233,69,96,0.9); color: #fff; }
+        .toast.success { background: rgba(74,153,120,0.9); color: #fff; }
+
         @media (min-width: 500px) {
             .joystick-container { width: 160px; height: 160px; }
             .joystick-base { width: 160px; height: 160px; }
@@ -220,8 +225,15 @@ HTML_TEMPLATE = """
     </div>
 
     <div class="footer-space"></div>
+    <div class="toast" id="toast"></div>
 
     <script>
+        function showToast(msg, type='error', duration=2500) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + type + ' show';
+            setTimeout(() => t.classList.remove('show'), duration);
+        }
         /* ===== Joystick control (unchanged) ===== */
         let moveX = 0, moveY = 0, rotation = 0, maxSpeed = 50;
         const moveJoystick = document.getElementById('moveJoystick');
@@ -413,9 +425,9 @@ HTML_TEMPLATE = """
             try {
                 const res = await fetch('/api/waypoints/record', {method: 'POST'});
                 const data = await res.json();
-                if (res.ok) refreshWaypoints();
-                else document.getElementById('patrolStatus').textContent = data.message || 'Erreur';
-            } catch(e) {}
+                if (res.ok) { refreshWaypoints(); showToast('Position enregistree', 'success'); }
+                else showToast(data.message || 'Erreur', 'error');
+            } catch(e) { showToast('Connexion perdue', 'error'); }
         }
         async function deleteLastWaypoint() {
             try {
