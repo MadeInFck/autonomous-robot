@@ -33,7 +33,8 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Robot Mecanum</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; -webkit-user-select: none; user-select: none; }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+        .joystick-container { touch-action: none; }
         html { height: 100%; }
         body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #fff; min-height: 100%; display: flex; flex-direction: column; overflow-y: auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); -webkit-overflow-scrolling: touch; }
 
@@ -72,7 +73,7 @@ HTML_TEMPLATE = """
         .tel-row { margin: 2px 0; }
 
         .speed-control { display: flex; align-items: center; gap: 8px; }
-        .speed-btn { width: 38px; height: 38px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4); background: transparent; color: #fff; font-size: 1.3em; }
+        .speed-btn { width: 38px; height: 38px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4); background: transparent; color: #fff; font-size: 1.3em; touch-action: manipulation; }
         .speed-btn:active { background: rgba(255,255,255,0.2); }
         .speed-value { font-size: 1.1em; min-width: 50px; text-align: center; font-weight: bold; }
 
@@ -86,7 +87,7 @@ HTML_TEMPLATE = """
 
         .patrol-section { padding: 8px 15px; background: rgba(0,0,0,0.15); }
         .patrol-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-        .patrol-btn { padding: 8px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.8em; cursor: pointer; }
+        .patrol-btn { padding: 8px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.8em; cursor: pointer; touch-action: manipulation; }
         .patrol-btn:active { background: rgba(255,255,255,0.25); }
         .patrol-btn.start { background: rgba(74,153,120,0.4); border-color: #4a9; }
         .patrol-btn.stop { background: rgba(233,69,96,0.4); border-color: #e94560; }
