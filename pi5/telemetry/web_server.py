@@ -30,12 +30,12 @@ HTML_TEMPLATE = """
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Robot Mecanum</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; -webkit-user-select: none; user-select: none; }
         html { height: 100%; }
-        body { font-family: -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff; min-height: 100%; display: flex; flex-direction: column; overflow-y: auto; padding-top: env(safe-area-inset-top); }
+        body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #fff; min-height: 100%; display: flex; flex-direction: column; overflow-y: auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); -webkit-overflow-scrolling: touch; }
 
         .header { text-align: center; padding: 8px; background: rgba(0,0,0,0.3); flex-shrink: 0; }
         .header h1 { font-size: 1.1em; font-weight: 500; }
@@ -55,7 +55,7 @@ HTML_TEMPLATE = """
         .sensor-values { display: flex; gap: 8px; }
         .axis-label { opacity: 0.5; }
 
-        .joysticks-row { display: flex; justify-content: space-around; align-items: center; padding: 20px; min-height: 180px; }
+        .joysticks-row { display: flex; justify-content: space-around; align-items: center; padding: 10px; min-height: 160px; }
 
         .joystick-wrapper { text-align: center; }
         .joystick-label { font-size: 0.85em; margin-bottom: 10px; opacity: 0.8; }
@@ -77,14 +77,14 @@ HTML_TEMPLATE = """
         .speed-value { font-size: 1.1em; min-width: 50px; text-align: center; font-weight: bold; }
 
         /* --- Lidar + Patrol section --- */
-        .section-title { font-size: 0.9em; padding: 10px 15px 4px; opacity: 0.7; }
+        .section-title { font-size: 0.85em; padding: 6px 15px 2px; opacity: 0.7; }
 
-        .lidar-section { display: flex; flex-direction: column; align-items: center; padding: 10px; background: rgba(0,0,0,0.1); }
+        .lidar-section { display: flex; flex-direction: column; align-items: center; padding: 6px; background: rgba(0,0,0,0.1); }
         .lidar-canvas-wrap { position: relative; }
         #lidarCanvas { background: #0a0a1a; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); }
         .lidar-info { font-size: 0.65em; font-family: monospace; opacity: 0.6; margin-top: 4px; }
 
-        .patrol-section { padding: 10px 15px; background: rgba(0,0,0,0.15); }
+        .patrol-section { padding: 8px 15px; background: rgba(0,0,0,0.15); }
         .patrol-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
         .patrol-btn { padding: 8px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.8em; cursor: pointer; }
         .patrol-btn:active { background: rgba(255,255,255,0.25); }
@@ -99,7 +99,7 @@ HTML_TEMPLATE = """
 
         .patrol-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-top: 6px; }
 
-        .footer-space { height: calc(20px + env(safe-area-inset-bottom)); flex-shrink: 0; }
+        .footer-space { height: 20px; flex-shrink: 0; }
 
         @media (min-width: 500px) {
             .joystick-container { width: 160px; height: 160px; }
@@ -200,7 +200,7 @@ HTML_TEMPLATE = """
     <div class="section-title">LiDAR 360</div>
     <div class="lidar-section">
         <div class="lidar-canvas-wrap">
-            <canvas id="lidarCanvas" width="260" height="260"></canvas>
+            <canvas id="lidarCanvas" width="200" height="200"></canvas>
         </div>
         <div class="lidar-info"><span id="lidarInfo">--</span></div>
     </div>
