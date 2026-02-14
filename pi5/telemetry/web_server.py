@@ -525,7 +525,8 @@ class WebServer:
                  lidar_scanner=None, patrol_manager=None, pilot=None,
                  host='0.0.0.0', port=8085,
                  auth_username=None, auth_password_hash=None,
-                 ssl_cert=None, ssl_key=None):
+                 ssl_cert=None, ssl_key=None,
+                 patrol_file=None):
         self.app = Flask(__name__)
         self.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16 KB max
         self.motor_controller = motor_controller
@@ -535,6 +536,7 @@ class WebServer:
         self.pilot = pilot
         self.host = host
         self.port = port
+        self._patrol_file = patrol_file
         self._thread = None
         self._running = False
         self._auth_username = auth_username
@@ -671,7 +673,7 @@ class WebServer:
             idx = self.patrol_manager.record_waypoint(data.latitude, data.longitude)
             # Auto-save
             try:
-                self.patrol_manager.save('config/patrol_route.json')
+                self.patrol_manager.save(self._patrol_file)
             except Exception:
                 pass
             return jsonify({'status': 'ok', 'index': idx})
@@ -682,7 +684,7 @@ class WebServer:
                 return jsonify({'status': 'error'}), 400
             self.patrol_manager.delete_waypoint(idx)
             try:
-                self.patrol_manager.save('config/patrol_route.json')
+                self.patrol_manager.save(self._patrol_file)
             except Exception:
                 pass
             return jsonify({'status': 'ok'})
@@ -693,7 +695,7 @@ class WebServer:
                 return jsonify({'status': 'error'}), 400
             self.patrol_manager.delete_waypoint(self.patrol_manager.count - 1)
             try:
-                self.patrol_manager.save('config/patrol_route.json')
+                self.patrol_manager.save(self._patrol_file)
             except Exception:
                 pass
             return jsonify({'status': 'ok'})

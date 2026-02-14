@@ -25,7 +25,8 @@ UART_BAUDRATE = 115200
 LIDAR_PORT = '/dev/ttyUSB0'
 LIDAR_BAUDRATE = 460800
 WEB_PORT = 8085
-PATROL_FILE = 'config/patrol_route.json'
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PATROL_FILE = os.path.join(PROJECT_ROOT, 'config', 'patrol_route.json')
 
 
 class RobotApp:
@@ -132,6 +133,7 @@ class RobotApp:
             auth_password_hash=auth_password_hash,
             ssl_cert=ssl_cert,
             ssl_key=ssl_key,
+            patrol_file=PATROL_FILE,
         )
         if auth_username:
             print("[Web] Authentification activee")
@@ -229,9 +231,7 @@ class RobotApp:
 
 def load_web_config():
     """Charge la config auth + TLS depuis robot_config.yaml"""
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               '..', 'config', 'robot_config.yaml')
-    base_dir = os.path.dirname(config_path)
+    config_path = os.path.join(PROJECT_ROOT, 'config', 'robot_config.yaml')
     try:
         import yaml
         with open(config_path) as f:
@@ -242,9 +242,9 @@ def load_web_config():
         ssl_cert = tls.get('cert')
         ssl_key = tls.get('key')
         if ssl_cert and not os.path.isabs(ssl_cert):
-            ssl_cert = os.path.join(base_dir, ssl_cert)
+            ssl_cert = os.path.join(PROJECT_ROOT, ssl_cert)
         if ssl_key and not os.path.isabs(ssl_key):
-            ssl_key = os.path.join(base_dir, ssl_key)
+            ssl_key = os.path.join(PROJECT_ROOT, ssl_key)
         # Only use TLS if both files exist
         if ssl_cert and ssl_key and os.path.exists(ssl_cert) and os.path.exists(ssl_key):
             pass
