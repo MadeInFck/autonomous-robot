@@ -412,7 +412,9 @@ HTML_TEMPLATE = """
         async function recordWaypoint() {
             try {
                 const res = await fetch('/api/waypoints/record', {method: 'POST'});
+                const data = await res.json();
                 if (res.ok) refreshWaypoints();
+                else document.getElementById('patrolStatus').textContent = data.message || 'Erreur';
             } catch(e) {}
         }
         async function deleteLastWaypoint() {
