@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Application principale Raspberry Pi 5
-Robot Autonome Mecanum - Contrôle via smartphone
+Robot Autonome Mecanum - Controle via smartphone + patrouille autonome
 
-Déploiement: ~/AutonomRobot/pi5/
+Deploiement: ~/AutonomRobot/pi5/
 """
 
 import os
@@ -17,19 +17,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sensors.uart_receiver import UARTReceiver, SensorData
 from motors.motor_controller import MecanumController
 from telemetry.web_server import WebServer
+from navigation.patrol_manager import PatrolManager
 
-# Configuration
+# Configuration par defaut
 UART_PORT = '/dev/ttyAMA3'
 UART_BAUDRATE = 115200
+LIDAR_PORT = '/dev/ttyUSB0'
+LIDAR_BAUDRATE = 460800
 WEB_PORT = 8085
+PATROL_FILE = 'config/patrol_route.json'
 
 
 class RobotApp:
     """Application principale du robot"""
 
-    def __init__(self, enable_motors=True, enable_sensors=True, web_port=WEB_PORT):
+    def __init__(self, enable_motors=True, enable_sensors=True,
+                 enable_lidar=True, lidar_port=LIDAR_PORT,
+                 web_port=WEB_PORT):
         self.motor_controller = None
         self.sensor_receiver = None
+        self.lidar_scanner = None
+        self.patrol_manager = None
+        self.pilot = None
         self.web_server = None
         self._running = False
 
@@ -46,7 +55,7 @@ class RobotApp:
             except Exception as e:
                 print(f"[Motors] Erreur: {e}")
 
-        # Initialiser le récepteur UART
+        # Initialiser le recepteur UART
         if enable_sensors:
             print(f"\n[UART] Initialisation {UART_PORT}...")
             try:
@@ -64,45 +73,95 @@ class RobotApp:
                 print(f"[UART] Erreur: {e}")
                 self.sensor_receiver = None
 
+        # Initialiser le LiDAR
+        if enable_lidar:
+            print(f"\n[LiDAR] Initialisation {lidar_port}...")
+            try:
+                from lidar.scanner import LidarScanner
+                self.lidar_scanner = LidarScanner(
+                    port=lidar_port,
+                    baudrate=LIDAR_BAUDRATE,
+                    min_quality=10,
+                )
+                self.lidar_scanner.start()
+                print("[LiDAR] OK")
+            except Exception as e:
+                print(f"[LiDAR] Erreur: {e}")
+                self.lidar_scanner = None
+
+        # Initialiser le gestionnaire de patrouille
+        print("\n[Patrol] Initialisation...")
+        self.patrol_manager = PatrolManager(waypoint_radius=3.0)
+        if os.path.exists(PATROL_FILE):
+            if self.patrol_manager.load(PATROL_FILE):
+                print(f"[Patrol] {self.patrol_manager.count} waypoints charges")
+            else:
+                print("[Patrol] Erreur chargement waypoints")
+        else:
+            print("[Patrol] Aucun parcours sauvegarde")
+
+        # Initialiser le pilote autonome
+        if self.motor_controller and self.sensor_receiver:
+            try:
+                from navigation.pilot import AutonomousPilot
+                self.pilot = AutonomousPilot(
+                    motor_controller=self.motor_controller,
+                    sensor_receiver=self.sensor_receiver,
+                    lidar_scanner=self.lidar_scanner,
+                    patrol_manager=self.patrol_manager,
+                    patrol_speed=40,
+                    obstacle_distance_mm=800,
+                    loop_patrol=True,
+                )
+                print("[Pilot] OK")
+            except Exception as e:
+                print(f"[Pilot] Erreur: {e}")
+
         # Initialiser le serveur web
         print(f"\n[Web] Initialisation serveur sur port {web_port}...")
         self.web_server = WebServer(
             motor_controller=self.motor_controller,
             sensor_receiver=self.sensor_receiver,
-            port=web_port
+            lidar_scanner=self.lidar_scanner,
+            patrol_manager=self.patrol_manager,
+            pilot=self.pilot,
+            port=web_port,
         )
 
     def _on_sensor_data(self, data: SensorData):
-        """Callback pour données capteurs reçues"""
+        """Callback pour donnees capteurs recues"""
         pass
 
     def run(self):
         """Lance l'application"""
         self._running = True
 
-        # Démarrer le serveur web
+        # Demarrer le serveur web
         if self.web_server:
             url = self.web_server.start(threaded=True)
         else:
             url = "non disponible"
 
         print("\n" + "-" * 50)
-        print("Robot prêt!")
+        print("Robot pret!")
         print(f"Interface web: {url}")
-        print("Ctrl+C pour arrêter")
+        print("Ctrl+C pour arreter")
         print("-" * 50 + "\n")
 
         try:
             while self._running:
+                # Traiter les points lidar entrants
+                if self.lidar_scanner:
+                    self.lidar_scanner.process_incoming()
                 self._print_status()
                 time.sleep(5)
         except KeyboardInterrupt:
-            print("\n\nArrêt demandé...")
+            print("\n\nArret demande...")
 
         self.shutdown()
 
     def _print_status(self):
-        """Affiche le status périodique"""
+        """Affiche le status periodique"""
         status_parts = []
 
         if self.sensor_receiver:
@@ -118,45 +177,67 @@ class RobotApp:
             active = sum(1 for m in motors.values() if m['speed'] > 0)
             status_parts.append(f"Motors: {active}/4")
 
+        if self.lidar_scanner:
+            scan = self.lidar_scanner.get_last_scan()
+            if scan:
+                status_parts.append(f"Lidar: {scan.num_valid}pts")
+
+        if self.pilot:
+            status_parts.append(f"Mode: {self.pilot.state.name}")
+
         if status_parts:
             print(f"[Status] {' | '.join(status_parts)}")
 
     def shutdown(self):
-        """Arrête proprement l'application"""
+        """Arrete proprement l'application"""
         self._running = False
-        print("\nArrêt des composants...")
+        print("\nArret des composants...")
+
+        if self.pilot:
+            print("  - Arret pilote")
+            self.pilot.stop()
 
         if self.motor_controller:
-            print("  - Arrêt moteurs")
+            print("  - Arret moteurs")
             self.motor_controller.stop()
             self.motor_controller.close()
+
+        if self.lidar_scanner:
+            print("  - Arret LiDAR")
+            self.lidar_scanner.stop()
 
         if self.sensor_receiver:
             print("  - Fermeture UART")
             self.sensor_receiver.close()
 
         if self.web_server:
-            print("  - Arrêt serveur web")
+            print("  - Arret serveur web")
             self.web_server.stop()
 
-        print("\nProgramme terminé")
+        print("\nProgramme termine")
 
 
 def main():
     parser = argparse.ArgumentParser(description='Robot Mecanum Controller')
     parser.add_argument('--no-motors', action='store_true',
-                        help='Désactiver le contrôle moteurs')
+                        help='Desactiver le controle moteurs')
     parser.add_argument('--no-sensors', action='store_true',
-                        help='Désactiver la réception UART')
+                        help='Desactiver la reception UART')
+    parser.add_argument('--no-lidar', action='store_true',
+                        help='Desactiver le LiDAR')
+    parser.add_argument('--lidar-port', type=str, default=LIDAR_PORT,
+                        help=f'Port LiDAR (defaut: {LIDAR_PORT})')
     parser.add_argument('--port', type=int, default=WEB_PORT,
-                        help=f'Port serveur web (défaut: {WEB_PORT})')
+                        help=f'Port serveur web (defaut: {WEB_PORT})')
 
     args = parser.parse_args()
 
     app = RobotApp(
         enable_motors=not args.no_motors,
         enable_sensors=not args.no_sensors,
-        web_port=args.port
+        enable_lidar=not args.no_lidar,
+        lidar_port=args.lidar_port,
+        web_port=args.port,
     )
 
     def signal_handler(sig, frame):

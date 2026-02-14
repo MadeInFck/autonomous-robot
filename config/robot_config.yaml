@@ -43,19 +43,27 @@ motors:
     RR_in1: 5            # GPIO5 - avant
     RR_in2: 6            # GPIO6 - arrière
 
-# Navigation autonome
+# LiDAR RPLidar C1 (USB)
+lidar:
+  port: /dev/ttyUSB0
+  baudrate: 460800
+  min_quality: 10
+
+# Navigation autonome et patrouille
 navigation:
-  waypoint_radius: 3.0   # mètres - rayon de validation waypoint
-  max_speed: 1.0         # m/s
-  min_speed: 0.2         # m/s
+  waypoint_radius: 3.0   # metres - rayon de validation waypoint
+  patrol_speed: 40       # % vitesse max en patrouille
+  obstacle_distance: 800 # mm - distance d'evitement
+  patrol_file: config/patrol_route.json
+  loop: true             # boucler la patrouille
   pid:
     kp: 1.0
-    ki: 0.1
-    kd: 0.05
+    ki: 0.05
+    kd: 0.1
 
 # Serveur web (télémétrie + contrôle)
 telemetry:
-  web_server_port: 8080
+  web_server_port: 8085
   update_rate: 10        # Hz
   enable_logging: true
 

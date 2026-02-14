@@ -160,9 +160,17 @@ autonomous-robot/
 │   │   └── motor_controller.py    # Contrôleur Mecanum (gpiod + PWM)
 │   ├── sensors/
 │   │   └── uart_receiver.py       # Réception et décodage trames UART
+│   ├── lidar/                     # RPLidar C1 (scans + détection)
+│   │   ├── scanner.py             # Acquisition scans 360°
+│   │   ├── data.py                # Modèles ScanPoint, Scan
+│   │   └── detection/             # DBSCAN, tracking, grille occupation
+│   ├── navigation/                # Navigation autonome
+│   │   ├── patrol_manager.py      # Gestion waypoints GPS
+│   │   ├── obstacle_avoider.py    # Évitement obstacles lidar
+│   │   └── pilot.py               # Pilote autonome (GPS + lidar)
 │   ├── telemetry/
-│   │   └── web_server.py          # Serveur Flask + interface joystick
-│   └── tests/                     # Tests unitaires (à compléter)
+│   │   └── web_server.py          # Serveur Flask + joystick + lidar + patrouille
+│   └── tests/                     # Tests unitaires
 └── scripts/
     └── setup_pi5_env.sh           # Script d'installation Pi5
 ```
@@ -249,8 +257,8 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [x] Calibrer IMU BMI160 au repos
 - [x] Valider réception GPS en extérieur (premier fix)
 - [x] Écrire tests unitaires (`pi5/tests/`)
-- [ ] Intégrer navigation autonome par waypoints GPS
-- [ ] Ajouter détection d'obstacles (lidar/ultrason)
+- [x] Intégrer navigation autonome par waypoints GPS
+- [x] Ajouter détection d'obstacles (RPLidar C1)
 
 ## Licence
 
