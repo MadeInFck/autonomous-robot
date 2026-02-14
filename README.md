@@ -248,7 +248,7 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [x] Tester interface joystick sur smartphone
 - [x] Calibrer IMU BMI160 au repos
 - [x] Valider réception GPS en extérieur (premier fix)
-- [ ] Écrire tests unitaires (`pi5/tests/`)
+- [x] Écrire tests unitaires (`pi5/tests/`)
 - [ ] Intégrer navigation autonome par waypoints GPS
 - [ ] Ajouter détection d'obstacles (lidar/ultrason)
 
