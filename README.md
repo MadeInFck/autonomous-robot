@@ -27,7 +27,9 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 - **Interface smartphone** : Double joystick tactile (mouvement + rotation) via navigateur web
 - **Télémétrie temps réel** : Position GPS, accéléromètre, gyroscope, vitesse, cap
 - **Contrôle de vitesse** : Réglable de 30% à 100% depuis l'interface
-- **Navigation autonome** : Suivi de waypoints GPS (en développement)
+- **Navigation autonome** : Patrouille par waypoints GPS avec évitement d'obstacles (LiDAR)
+- **LiDAR RPLidar C1** : Scan 360°, détection d'obstacles, grille d'occupation
+- **Sécurité** : Authentification HTTP Basic Auth (scrypt), TLS/HTTPS optionnel
 
 ## Câblage
 
@@ -121,33 +123,71 @@ python main.py
 Options :
 - `--no-motors` : Désactiver les moteurs (test capteurs uniquement)
 - `--no-sensors` : Désactiver la réception UART (test moteurs uniquement)
+- `--no-lidar` : Désactiver le LiDAR
+- `--lidar-port /dev/ttyUSB0` : Port série du LiDAR (défaut : `/dev/ttyUSB0`)
 - `--port 8085` : Port du serveur web (défaut : 8085)
+- `--no-auth` : Désactiver l'authentification (dev/debug uniquement)
 
 ### Contrôle via smartphone
 
 1. Connecter le smartphone au même réseau WiFi que la Pi5
-2. Ouvrir `http://<ip-pi5>:8085` dans le navigateur
-3. Utiliser le joystick gauche pour le déplacement, le droit pour la rotation
-4. Régler la vitesse avec les boutons +/- (30-100%)
+2. Ouvrir `https://<ip-pi5>:8085` dans le navigateur (accepter le certificat auto-signé)
+3. Se connecter avec les identifiants configurés dans `config/robot_config.yaml`
+4. Utiliser le joystick gauche pour le déplacement, le droit pour la rotation
+5. Régler la vitesse avec les boutons +/- (30-100%)
 
-### Test UART sans capteurs
+## Sécurité
 
-Le script `pico/test_uart.py` simule des données IMU et GPS pour tester la communication Pi5 ↔ Pico sans matériel capteur :
+### Authentification
+
+L'interface web est protégée par HTTP Basic Auth. Les identifiants (`username` et `password_hash`) sont configurés dans `config/robot_config.yaml`.
+
+Pour générer un hash de mot de passe :
 
 ```bash
-mpremote run pico/test_uart.py
+python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MON_MOT_DE_PASSE'))"
 ```
+
+Pour désactiver l'authentification (dev uniquement) : `python main.py --no-auth`
+
+### TLS / HTTPS
+
+Le serveur supporte HTTPS via un certificat auto-signé. Les fichiers de certificat sont stockés dans `config/ssl/` (ignoré par git).
+
+**Générer le certificat sur la Pi5 :**
+
+```bash
+mkdir -p ~/AutonomRobot/config/ssl
+openssl req -x509 -newkey rsa:2048 \
+  -keyout ~/AutonomRobot/config/ssl/key.pem \
+  -out ~/AutonomRobot/config/ssl/cert.pem \
+  -days 3650 -nodes \
+  -subj '/CN=robot-mecanum'
+```
+
+La configuration TLS dans `config/robot_config.yaml` :
+
+```yaml
+tls:
+  cert: config/ssl/cert.pem
+  key: config/ssl/key.pem
+```
+
+Si les fichiers de certificat n'existent pas, le serveur démarre automatiquement en HTTP.
 
 ## Structure du projet
 
 ```
 autonomous-robot/
 ├── config/
-│   ├── robot_config.yaml          # Configuration GPIO, UART, moteurs, PID
-│   └── sensor_calibration.json    # Offsets calibration IMU et GPS
+│   ├── robot_config.yaml          # Configuration GPIO, UART, moteurs, auth, TLS
+│   ├── patrol_route.json          # Waypoints de patrouille (créé automatiquement)
+│   ├── sensor_calibration.json    # Offsets calibration IMU et GPS
+│   └── ssl/                       # Certificats TLS (ignoré par git)
+│       ├── cert.pem
+│       └── key.pem
 ├── pico/                          # Code MicroPython (Pico)
 │   ├── main.py                    # Application capteurs principale
-│   ├── test_uart.py               # Test UART avec données simulées
 │   └── lib/
 │       ├── bmi160_raw.py          # Driver IMU BMI160
 │       ├── gps_reader.py          # Lecteur GPS NEO-6M
@@ -207,12 +247,19 @@ Fréquence de transmission : **10 Hz** (100 ms).
 
 Le serveur Flask expose les endpoints suivants :
 
-| Méthode | Endpoint       | Description                        |
-|---------|----------------|------------------------------------|
-| POST    | `/api/move`    | Commande de mouvement              |
-| GET     | `/api/sensors` | Dernières données capteurs         |
-| GET     | `/api/status`  | État des composants                |
-| POST    | `/api/stop`    | Arrêt d'urgence des moteurs       |
+| Méthode | Endpoint              | Description                          |
+|---------|-----------------------|--------------------------------------|
+| POST    | `/api/move`           | Commande de mouvement                |
+| GET     | `/api/sensors`        | Dernières données capteurs           |
+| GET     | `/api/status`         | État des composants                  |
+| POST    | `/api/stop`           | Arrêt d'urgence des moteurs         |
+| GET     | `/api/lidar`          | Derniers points du scan LiDAR        |
+| GET     | `/api/waypoints`      | Liste des waypoints + index courant  |
+| POST    | `/api/waypoints/record` | Enregistre la position GPS actuelle |
+| DELETE  | `/api/waypoints/<idx>` | Supprime un waypoint                |
+| POST    | `/api/patrol/start`   | Lance la patrouille autonome         |
+| POST    | `/api/patrol/stop`    | Arrête la patrouille                 |
+| GET     | `/api/patrol/status`  | État de la patrouille                |
 
 ### POST `/api/move`
 
@@ -259,6 +306,7 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [x] Écrire tests unitaires (`pi5/tests/`)
 - [x] Intégrer navigation autonome par waypoints GPS
 - [x] Ajouter détection d'obstacles (RPLidar C1)
+- [x] Sécuriser l'interface web (auth + TLS)
 
 ## Licence
 
