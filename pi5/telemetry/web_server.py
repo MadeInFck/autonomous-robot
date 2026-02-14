@@ -83,7 +83,7 @@ HTML_TEMPLATE = """
 
     <div class="status-bar">
         <span><span class="status-dot" id="connDot"></span><span id="connText">...</span></span>
-        <span>GPS: <span class="status-dot" id="gpsDot"></span><span id="gpsFixStatus">--</span></span>
+        <span>GPS: <span class="status-dot" id="gpsDot"></span><span id="gpsFixStatus">--</span> | <span id="gpsSats">0</span> sat</span>
     </div>
 
     <div class="sensors-panel">
@@ -310,12 +310,14 @@ HTML_TEMPLATE = """
                     document.getElementById('gyrY').textContent = (d.gyr_y !== undefined) ? d.gyr_y.toFixed(1) : '--';
                     document.getElementById('gyrZ').textContent = (d.gyr_z !== undefined) ? d.gyr_z.toFixed(1) : '--';
                     // GPS
-                    const hasFix = d.latitude !== undefined && (d.latitude !== 0 || d.longitude !== 0);
+                    const hasFix = d.has_fix === true || (d.latitude !== undefined && (d.latitude !== 0 || d.longitude !== 0));
                     document.getElementById('gpsDot').classList.toggle('connected', hasFix);
                     document.getElementById('gpsFixStatus').textContent = hasFix ? 'FIX' : 'NO FIX';
+                    document.getElementById('gpsSats').textContent = (d.satellites !== undefined) ? d.satellites : '0';
                     document.getElementById('gpsLat').textContent = (d.latitude !== undefined) ? d.latitude.toFixed(6) : '--';
                     document.getElementById('gpsLon').textContent = (d.longitude !== undefined) ? d.longitude.toFixed(6) : '--';
-                    document.getElementById('gpsSpeed').textContent = (d.speed_kmh !== undefined) ? d.speed_kmh.toFixed(1) : '--';
+                    const speedKmh = (d.speed_kmh !== undefined && d.speed_kmh > 0.5) ? d.speed_kmh : 0;
+                    document.getElementById('gpsSpeed').textContent = speedKmh.toFixed(1);
                     document.getElementById('gpsHeading').textContent = (d.heading !== undefined) ? d.heading.toFixed(0) + '°' : '--';
                     document.getElementById('gpsCardinal').textContent = (d.heading !== undefined) ? headingToCardinal(d.heading) : '';
                 }

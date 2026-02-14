@@ -139,7 +139,9 @@ def main():
                 longitude=convert_coord_to_microdeg(gps_data['lon']),
                 altitude=convert_alt_m_to_dm(gps_data['alt']),
                 vitesse=convert_speed_ms_to_cms(gps_data['speed']),
-                cap=convert_heading_to_raw(gps_data['course'])
+                cap=convert_heading_to_raw(gps_data['course']),
+                satellites=gps_data['satellites'],
+                fix_quality=1 if gps_data['valid'] else 0
             )
 
             # Envoyer
@@ -159,11 +161,11 @@ def main():
                 gps_status = "FIX" if gps_data['valid'] else "---"
                 imu_status = "OK" if imu_data['valid'] else "ERR"
 
-                print(f"[{seq:5d}] GPS:{gps_status} IMU:{imu_status} TX:{packets_sent}")
+                print(f"[{seq:5d}] GPS:{gps_status}({gps_data['satellites']}sat) IMU:{imu_status} TX:{packets_sent}")
                 print(f"  Acc: {imu_data['acc_x']:+.2f} {imu_data['acc_y']:+.2f} {imu_data['acc_z']:+.2f} g")
                 print(f"  Gyr: {imu_data['gyr_x']:+.1f} {imu_data['gyr_y']:+.1f} {imu_data['gyr_z']:+.1f} dps")
                 if gps_data['valid']:
-                    print(f"  GPS: {gps_data['lat']:.6f}, {gps_data['lon']:.6f} | {gps_data['satellites']} sat")
+                    print(f"  GPS: {gps_data['lat']:.6f}, {gps_data['lon']:.6f}")
                 print()
                 last_print = now
 

@@ -8,7 +8,7 @@ import struct
 # Constantes protocole
 STX = 0x02
 ETX = 0x03
-PAYLOAD_LEN = 28
+PAYLOAD_LEN = 30
 
 
 def calc_crc8(data: bytes) -> int:
@@ -31,7 +31,8 @@ def build_frame(seq: int,
                 acc_x: int, acc_y: int, acc_z: int,
                 gyr_x: int, gyr_y: int, gyr_z: int,
                 latitude: int, longitude: int,
-                altitude: int, vitesse: int, cap: int) -> bytes:
+                altitude: int, vitesse: int, cap: int,
+                satellites: int = 0, fix_quality: int = 0) -> bytes:
     """
     Construit une trame complète à partir des données capteurs
 
@@ -44,18 +45,21 @@ def build_frame(seq: int,
         altitude: Altitude en décimètres (int16)
         vitesse: Vitesse en cm/s (uint16)
         cap: Cap en 0.01° (uint16, 0-35999)
+        satellites: Nombre de satellites utilisés (0-255)
+        fix_quality: Qualité du fix GPS (0=no fix, 1=GPS, 2=DGPS)
 
     Returns:
-        Trame complète de 32 octets
+        Trame complète de 34 octets
     """
     # Construire le payload (little-endian)
-    # H = uint16, h = int16, l = int32
-    payload = struct.pack('<HhhhhhhllhHH',
+    # H = uint16, h = int16, l = int32, B = uint8
+    payload = struct.pack('<HhhhhhhllhHHBB',
                           seq,
                           acc_x, acc_y, acc_z,
                           gyr_x, gyr_y, gyr_z,
                           latitude, longitude,
-                          altitude, vitesse, cap)
+                          altitude, vitesse, cap,
+                          satellites, fix_quality)
 
     # Construire LEN + PAYLOAD pour le CRC
     len_byte = bytes([PAYLOAD_LEN])

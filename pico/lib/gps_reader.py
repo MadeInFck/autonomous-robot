@@ -28,8 +28,8 @@ class GPSReader:
             char = self.uart.read(1)
             if char:
                 try:
-                    self.parser.update(char.decode('ascii', errors='ignore'))
-                except:
+                    self.parser.update(chr(char[0]))
+                except (TypeError, ValueError):
                     pass
 
     def read(self):

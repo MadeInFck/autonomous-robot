@@ -169,12 +169,12 @@ autonomous-robot/
 
 ## Protocole UART
 
-Trames de 32 bytes avec encapsulation STX/ETX et CRC-8 :
+Trames de 34 bytes avec encapsulation STX/ETX et CRC-8 :
 
 ```
 Octet  0     : STX (0x02)
-Octet  1     : LEN (28 = longueur payload)
-Octets 2-29  : PAYLOAD (28 bytes)
+Octet  1     : LEN (30 = longueur payload)
+Octets 2-31  : PAYLOAD (30 bytes)
   2-3        : Séquence          (uint16, 0-65535)
   4-5        : Accéléromètre X   (int16, en mg)
   6-7        : Accéléromètre Y   (int16, en mg)
@@ -187,8 +187,10 @@ Octets 2-29  : PAYLOAD (28 bytes)
   24-25      : Altitude          (int16, en décimètres)
   26-27      : Vitesse           (uint16, en cm/s)
   28-29      : Cap               (uint16, en 0.01°)
-Octet  30    : CRC-8 (polynôme 0x07, sur le payload)
-Octet  31    : ETX (0x03)
+  30         : Satellites        (uint8, nombre de satellites)
+  31         : Fix qualité       (uint8, 0=no fix, 1=GPS, 2=DGPS)
+Octet  32    : CRC-8 (polynôme 0x07, sur le payload)
+Octet  33    : ETX (0x03)
 ```
 
 Fréquence de transmission : **10 Hz** (100 ms).
@@ -224,7 +226,8 @@ Le serveur Flask expose les endpoints suivants :
   "gyr_x": 0.1, "gyr_y": -0.2, "gyr_z": 0.05,
   "latitude": 48.8566, "longitude": 2.3522,
   "altitude": 35.2, "speed": 1.5, "speed_kmh": 5.4,
-  "heading": 127.5, "timestamp": 1700000000.0
+  "heading": 127.5, "satellites": 9, "has_fix": true,
+  "timestamp": 1700000000.0
 }
 ```
 
@@ -243,8 +246,8 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 
 - [x] Valider câblage moteurs et sens de rotation
 - [x] Tester interface joystick sur smartphone
-- [ ] Calibrer IMU BMI160 au repos
-- [ ] Valider réception GPS en extérieur (premier fix)
+- [x] Calibrer IMU BMI160 au repos
+- [x] Valider réception GPS en extérieur (premier fix)
 - [ ] Écrire tests unitaires (`pi5/tests/`)
 - [ ] Intégrer navigation autonome par waypoints GPS
 - [ ] Ajouter détection d'obstacles (lidar/ultrason)

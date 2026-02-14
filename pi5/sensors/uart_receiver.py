@@ -19,8 +19,8 @@ from enum import Enum, auto
 # Constantes protocole
 STX = 0x02
 ETX = 0x03
-PAYLOAD_LEN = 28
-FRAME_LEN = 32  # STX + LEN + PAYLOAD + CRC + ETX
+PAYLOAD_LEN = 30
+FRAME_LEN = 34  # STX + LEN + PAYLOAD + CRC + ETX
 
 
 class State(Enum):
@@ -54,6 +54,8 @@ class SensorData:
     speed: float = 0.0          # m/s
     speed_kmh: float = 0.0      # km/h
     heading: float = 0.0        # degrés
+    satellites: int = 0
+    has_fix: bool = False
 
     # Timestamp
     timestamp: float = 0.0
@@ -85,12 +87,13 @@ def parse_payload(payload: bytes) -> dict:
     Returns:
         Dict avec toutes les données décodées
     """
-    # H = uint16, h = int16, i = int32
+    # H = uint16, h = int16, i = int32, B = uint8
     (seq,
      acc_x, acc_y, acc_z,
      gyr_x, gyr_y, gyr_z,
      latitude, longitude,
-     altitude, vitesse, cap) = struct.unpack('<H hhh hhh ii hHH', payload)
+     altitude, vitesse, cap,
+     satellites, fix_quality) = struct.unpack('<H hhh hhh ii hHH BB', payload)
 
     return {
         'seq': seq,
@@ -112,6 +115,9 @@ def parse_payload(payload: bytes) -> dict:
         'vitesse_kmh': vitesse * 0.036,
         # GPS - Cap (0.01° → degrés)
         'cap': cap / 100.0,
+        # GPS - Satellites et fix
+        'satellites': satellites,
+        'fix_quality': fix_quality,
     }
 
 
@@ -330,6 +336,8 @@ class UARTReceiver:
                         speed=frame['vitesse_ms'],
                         speed_kmh=frame['vitesse_kmh'],
                         heading=frame['cap'],
+                        satellites=frame['satellites'],
+                        has_fix=frame['fix_quality'] > 0,
                         timestamp=time.time()
                     )
 
@@ -425,7 +433,8 @@ if __name__ == "__main__":
                     print(f"[Seq {data.sequence:5d}]")
                     print(f"  Accel: X={data.acc_x:+.3f}g Y={data.acc_y:+.3f}g Z={data.acc_z:+.3f}g")
                     print(f"  Gyro:  X={data.gyr_x:+.1f}deg/s Y={data.gyr_y:+.1f}deg/s Z={data.gyr_z:+.1f}deg/s")
-                    print(f"  GPS:   {data.latitude:.6f}deg, {data.longitude:.6f}deg")
+                    fix_str = "FIX" if data.has_fix else "NO FIX"
+                    print(f"  GPS:   {data.latitude:.6f}deg, {data.longitude:.6f}deg [{fix_str} {data.satellites}sat]")
                     print(f"         Alt={data.altitude:.1f}m Speed={data.speed_kmh:.1f}km/h Cap={data.heading:.1f}deg")
                     print()
                 else:

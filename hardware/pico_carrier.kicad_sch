@@ -1,0 +1,377 @@
+(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (generator_version "8.0")
+  (uuid "a0000000-0000-0000-0000-000000000000")
+  (paper "A4")
+
+  (lib_symbols
+
+    (symbol "carrier:Pico"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "U" (at 0 -17.78 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "Pico" (at 0 17.78 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "Pico_0_1"
+        (rectangle (start -10.16 -15.24) (end 10.16 15.24)
+          (stroke (width 0.254) (type default)) (fill (type background)))
+      )
+      (symbol "Pico_1_1"
+        (pin bidirectional line (at -12.7 12.7 0) (length 2.54) (name "GP0/TX0" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at -12.7 10.16 0) (length 2.54) (name "GP1/RX0" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at -12.7 7.62 0) (length 2.54) (name "GND" (effects (font (size 1.016 1.016)))) (number "3" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at -12.7 2.54 0) (length 2.54) (name "GP4/TX1" (effects (font (size 1.016 1.016)))) (number "6" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at -12.7 0 0) (length 2.54) (name "GP5/RX1" (effects (font (size 1.016 1.016)))) (number "7" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at -12.7 -7.62 0) (length 2.54) (name "GP14/SDA" (effects (font (size 1.016 1.016)))) (number "19" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at -12.7 -10.16 0) (length 2.54) (name "GP15/SCL" (effects (font (size 1.016 1.016)))) (number "20" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at 12.7 12.7 180) (length 2.54) (name "VSYS" (effects (font (size 1.016 1.016)))) (number "39" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at 12.7 10.16 180) (length 2.54) (name "GND" (effects (font (size 1.016 1.016)))) (number "38" (effects (font (size 1.016 1.016)))))
+        (pin power_out line (at 12.7 7.62 180) (length 2.54) (name "3V3_OUT" (effects (font (size 1.016 1.016)))) (number "36" (effects (font (size 1.016 1.016)))))
+      )
+    )
+
+    (symbol "carrier:BMI160"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "U" (at 0 -12.7 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "BMI160" (at 0 12.7 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "BMI160_0_1"
+        (rectangle (start -5.08 -10.16) (end 5.08 10.16)
+          (stroke (width 0.254) (type default)) (fill (type background)))
+      )
+      (symbol "BMI160_1_1"
+        (pin passive line (at 7.62 7.62 180) (length 2.54) (name "VIN" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at 7.62 5.08 180) (length 2.54) (name "3V3" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at 7.62 2.54 180) (length 2.54) (name "GND" (effects (font (size 1.016 1.016)))) (number "3" (effects (font (size 1.016 1.016)))))
+        (pin input line (at 7.62 0 180) (length 2.54) (name "SCL" (effects (font (size 1.016 1.016)))) (number "4" (effects (font (size 1.016 1.016)))))
+        (pin bidirectional line (at 7.62 -2.54 180) (length 2.54) (name "SDA" (effects (font (size 1.016 1.016)))) (number "5" (effects (font (size 1.016 1.016)))))
+        (pin input line (at 7.62 -5.08 180) (length 2.54) (name "CS" (effects (font (size 1.016 1.016)))) (number "6" (effects (font (size 1.016 1.016)))))
+        (pin input line (at 7.62 -7.62 180) (length 2.54) (name "SAD" (effects (font (size 1.016 1.016)))) (number "7" (effects (font (size 1.016 1.016)))))
+      )
+    )
+
+    (symbol "carrier:NEO6M"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "U" (at 0 -7.62 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "NEO6M" (at 0 7.62 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "NEO6M_0_1"
+        (rectangle (start -5.08 -5.08) (end 5.08 5.08)
+          (stroke (width 0.254) (type default)) (fill (type background)))
+      )
+      (symbol "NEO6M_1_1"
+        (pin power_in line (at -7.62 3.81 0) (length 2.54) (name "VCC" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin input line (at -7.62 1.27 0) (length 2.54) (name "RX" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+        (pin output line (at -7.62 -1.27 0) (length 2.54) (name "TX" (effects (font (size 1.016 1.016)))) (number "3" (effects (font (size 1.016 1.016)))))
+        (pin power_in line (at -7.62 -3.81 0) (length 2.54) (name "GND" (effects (font (size 1.016 1.016)))) (number "4" (effects (font (size 1.016 1.016)))))
+      )
+    )
+
+    (symbol "carrier:Bornier4"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "J" (at 0 -7.62 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "Bornier4" (at 0 7.62 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "Bornier4_0_1"
+        (rectangle (start -5.08 -5.08) (end 5.08 5.08)
+          (stroke (width 0.254) (type default)) (fill (type background)))
+      )
+      (symbol "Bornier4_1_1"
+        (pin passive line (at 7.62 3.81 180) (length 2.54) (name "5V" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin passive line (at 7.62 1.27 180) (length 2.54) (name "GND" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+        (pin passive line (at 7.62 -1.27 180) (length 2.54) (name "TX" (effects (font (size 1.016 1.016)))) (number "3" (effects (font (size 1.016 1.016)))))
+        (pin passive line (at 7.62 -3.81 180) (length 2.54) (name "RX" (effects (font (size 1.016 1.016)))) (number "4" (effects (font (size 1.016 1.016)))))
+      )
+    )
+
+    (symbol "carrier:C"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "C" (at 2.54 0 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "C" (at -2.54 0 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "C_0_1"
+        (polyline (pts (xy -1.27 -0.508) (xy 1.27 -0.508)) (stroke (width 0.3) (type default)) (fill (type none)))
+        (polyline (pts (xy -1.27 0.508) (xy 1.27 0.508)) (stroke (width 0.3) (type default)) (fill (type none)))
+      )
+      (symbol "C_1_1"
+        (pin passive line (at 0 2.54 270) (length 2.032) (name "1" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin passive line (at 0 -2.54 90) (length 2.032) (name "2" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+      )
+    )
+
+    (symbol "carrier:R"
+      (pin_names (offset 1.016))
+      (in_bom yes) (on_board yes)
+      (property "Reference" "R" (at 2.54 0 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "R" (at -2.54 0 0) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+      (symbol "R_0_1"
+        (rectangle (start -0.762 -2.032) (end 0.762 2.032)
+          (stroke (width 0.254) (type default)) (fill (type none)))
+      )
+      (symbol "R_1_1"
+        (pin passive line (at 0 3.81 270) (length 1.778) (name "1" (effects (font (size 1.016 1.016)))) (number "1" (effects (font (size 1.016 1.016)))))
+        (pin passive line (at 0 -3.81 90) (length 1.778) (name "2" (effects (font (size 1.016 1.016)))) (number "2" (effects (font (size 1.016 1.016)))))
+      )
+    )
+  )
+
+  ;; ======== U1: Raspberry Pi Pico at (148, 100) ========
+  (symbol
+    (lib_id "carrier:Pico")
+    (at 148.59 100.33 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000001")
+    (property "Reference" "U1" (at 148.59 118.11 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "Raspberry_Pi_Pico" (at 148.59 82.55 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_2x20_P2.54mm_Vertical" (at 148.59 100.33 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "b0000001")) (pin "2" (uuid "b0000002"))
+    (pin "3" (uuid "b0000003")) (pin "6" (uuid "b0000006"))
+    (pin "7" (uuid "b0000007")) (pin "19" (uuid "b0000019"))
+    (pin "20" (uuid "b0000020")) (pin "36" (uuid "b0000036"))
+    (pin "38" (uuid "b0000038")) (pin "39" (uuid "b0000039"))
+    (instances (project "" (path "/" (reference "U1") (unit 1))))
+  )
+
+  ;; ======== U2: BMI160 at (60, 140) ========
+  (symbol
+    (lib_id "carrier:BMI160")
+    (at 60.96 139.7 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000002")
+    (property "Reference" "U2" (at 60.96 152.4 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "BMI160" (at 60.96 127 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical" (at 60.96 139.7 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "c0000001")) (pin "2" (uuid "c0000002"))
+    (pin "3" (uuid "c0000003")) (pin "4" (uuid "c0000004"))
+    (pin "5" (uuid "c0000005")) (pin "6" (uuid "c0000006"))
+    (pin "7" (uuid "c0000007"))
+    (instances (project "" (path "/" (reference "U2") (unit 1))))
+  )
+
+  ;; ======== U3: NEO-6M at (240, 100) ========
+  (symbol
+    (lib_id "carrier:NEO6M")
+    (at 240.03 100.33 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000003")
+    (property "Reference" "U3" (at 240.03 107.95 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "NEO-6M" (at 240.03 92.71 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical" (at 240.03 100.33 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "d0000001")) (pin "2" (uuid "d0000002"))
+    (pin "3" (uuid "d0000003")) (pin "4" (uuid "d0000004"))
+    (instances (project "" (path "/" (reference "U3") (unit 1))))
+  )
+
+  ;; ======== J1: Bornier 4 pins at (148, 55) ========
+  (symbol
+    (lib_id "carrier:Bornier4")
+    (at 148.59 55.88 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000004")
+    (property "Reference" "J1" (at 148.59 63.5 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "Bornier_4P_5.08mm" (at 148.59 48.26 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "TerminalBlock:TerminalBlock_bornier-4_P5.08mm" (at 148.59 55.88 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "e0000001")) (pin "2" (uuid "e0000002"))
+    (pin "3" (uuid "e0000003")) (pin "4" (uuid "e0000004"))
+    (instances (project "" (path "/" (reference "J1") (unit 1))))
+  )
+
+  ;; ======== C1: 100nF decouplage VSYS ========
+  (symbol
+    (lib_id "carrier:C")
+    (at 180.34 55.88 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000005")
+    (property "Reference" "C1" (at 182.88 55.88 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "100nF" (at 177.8 55.88 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 180.34 55.88 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "f0000001")) (pin "2" (uuid "f0000002"))
+    (instances (project "" (path "/" (reference "C1") (unit 1))))
+  )
+
+  ;; ======== C2: 100nF decouplage BMI160 ========
+  (symbol
+    (lib_id "carrier:C")
+    (at 45.72 130.81 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000006")
+    (property "Reference" "C2" (at 48.26 130.81 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "100nF" (at 43.18 130.81 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 45.72 130.81 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "f0000003")) (pin "2" (uuid "f0000004"))
+    (instances (project "" (path "/" (reference "C2") (unit 1))))
+  )
+
+  ;; ======== C3: 100nF decouplage GPS ========
+  (symbol
+    (lib_id "carrier:C")
+    (at 220.98 91.44 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000007")
+    (property "Reference" "C3" (at 223.52 91.44 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "100nF" (at 218.44 91.44 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 220.98 91.44 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "f0000005")) (pin "2" (uuid "f0000006"))
+    (instances (project "" (path "/" (reference "C3") (unit 1))))
+  )
+
+  ;; ======== R1: 4.7k pull-up SDA ========
+  (symbol
+    (lib_id "carrier:R")
+    (at 82.55 120.65 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000008")
+    (property "Reference" "R1" (at 85.09 120.65 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "4.7k" (at 80.01 120.65 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 82.55 120.65 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "f0000007")) (pin "2" (uuid "f0000008"))
+    (instances (project "" (path "/" (reference "R1") (unit 1))))
+  )
+
+  ;; ======== R2: 4.7k pull-up SCL ========
+  (symbol
+    (lib_id "carrier:R")
+    (at 92.71 120.65 0) (unit 1)
+    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "a0000000-0000-0000-0000-000000000009")
+    (property "Reference" "R2" (at 95.25 120.65 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "4.7k" (at 90.17 120.65 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 92.71 120.65 0) (effects (font (size 1.27 1.27)) hide))
+    (pin "1" (uuid "f0000009")) (pin "2" (uuid "f000000a"))
+    (instances (project "" (path "/" (reference "R2") (unit 1))))
+  )
+
+  ;; ================================================================
+  ;; WIRES + NET LABELS
+  ;; Pico left pins: connection at x = 148.59 - 12.7 = 135.89
+  ;; Pico right pins: connection at x = 148.59 + 12.7 = 161.29
+  ;; ================================================================
+
+  ;; --- VSYS net (5V) ---
+  ;; Pico pin 39 VSYS (161.29, 87.63)
+  (wire (pts (xy 161.29 87.63) (xy 170.18 87.63)) (stroke (width 0) (type default)) (uuid "w0000001"))
+  (label "VSYS" (at 170.18 87.63 0) (effects (font (size 1.27 1.27))) (uuid "l0000001"))
+  ;; J1 pin 1 5V (156.21, 52.07)
+  (wire (pts (xy 156.21 52.07) (xy 170.18 52.07)) (stroke (width 0) (type default)) (uuid "w0000002"))
+  (label "VSYS" (at 170.18 52.07 0) (effects (font (size 1.27 1.27))) (uuid "l0000002"))
+  ;; NEO-6M pin 1 VCC (232.41, 96.52)
+  (wire (pts (xy 232.41 96.52) (xy 220.98 96.52)) (stroke (width 0) (type default)) (uuid "w0000003"))
+  (label "VSYS" (at 220.98 96.52 180) (effects (font (size 1.27 1.27))) (uuid "l0000003"))
+  ;; C1 pin 1 (180.34, 53.34)
+  (wire (pts (xy 180.34 53.34) (xy 180.34 52.07)) (stroke (width 0) (type default)) (uuid "w0000004"))
+  (wire (pts (xy 180.34 52.07) (xy 170.18 52.07)) (stroke (width 0) (type default)) (uuid "w0000004b"))
+  ;; C3 pin 1 (220.98, 88.9)
+  (wire (pts (xy 220.98 88.9) (xy 220.98 96.52)) (stroke (width 0) (type default)) (uuid "w0000005"))
+
+  ;; --- 3V3 net ---
+  ;; Pico pin 36 3V3_OUT (161.29, 92.71)
+  (wire (pts (xy 161.29 92.71) (xy 170.18 92.71)) (stroke (width 0) (type default)) (uuid "w0000010"))
+  (label "3V3" (at 170.18 92.71 0) (effects (font (size 1.27 1.27))) (uuid "l0000010"))
+  ;; BMI160 pin 2 3V3 (68.58, 134.62)
+  (wire (pts (xy 68.58 134.62) (xy 78.74 134.62)) (stroke (width 0) (type default)) (uuid "w0000011"))
+  (label "3V3" (at 78.74 134.62 0) (effects (font (size 1.27 1.27))) (uuid "l0000011"))
+  ;; BMI160 pin 6 CS → 3V3 (68.58, 144.78)
+  (wire (pts (xy 68.58 144.78) (xy 78.74 144.78)) (stroke (width 0) (type default)) (uuid "w0000012"))
+  (label "3V3" (at 78.74 144.78 0) (effects (font (size 1.27 1.27))) (uuid "l0000012"))
+  ;; C2 pin 1 (45.72, 128.27)
+  (wire (pts (xy 45.72 128.27) (xy 45.72 125.73)) (stroke (width 0) (type default)) (uuid "w0000013"))
+  (label "3V3" (at 45.72 125.73 90) (effects (font (size 1.27 1.27))) (uuid "l0000013"))
+  ;; R1 pin 1 (82.55, 116.84)
+  (wire (pts (xy 82.55 116.84) (xy 82.55 114.3)) (stroke (width 0) (type default)) (uuid "w0000014"))
+  (label "3V3" (at 82.55 114.3 90) (effects (font (size 1.27 1.27))) (uuid "l0000014"))
+  ;; R2 pin 1 (92.71, 116.84)
+  (wire (pts (xy 92.71 116.84) (xy 92.71 114.3)) (stroke (width 0) (type default)) (uuid "w0000015"))
+  (label "3V3" (at 92.71 114.3 90) (effects (font (size 1.27 1.27))) (uuid "l0000015"))
+
+  ;; --- GND net ---
+  ;; Pico pin 3 GND (135.89, 92.71)
+  (wire (pts (xy 135.89 92.71) (xy 127 92.71)) (stroke (width 0) (type default)) (uuid "w0000020"))
+  (label "GND" (at 127 92.71 180) (effects (font (size 1.27 1.27))) (uuid "l0000020"))
+  ;; Pico pin 38 GND (161.29, 90.17)
+  (wire (pts (xy 161.29 90.17) (xy 170.18 90.17)) (stroke (width 0) (type default)) (uuid "w0000021"))
+  (label "GND" (at 170.18 90.17 0) (effects (font (size 1.27 1.27))) (uuid "l0000021"))
+  ;; J1 pin 2 GND (156.21, 54.61)
+  (wire (pts (xy 156.21 54.61) (xy 170.18 54.61)) (stroke (width 0) (type default)) (uuid "w0000022"))
+  (label "GND" (at 170.18 54.61 0) (effects (font (size 1.27 1.27))) (uuid "l0000022"))
+  ;; BMI160 pin 3 GND (68.58, 137.16)
+  (wire (pts (xy 68.58 137.16) (xy 78.74 137.16)) (stroke (width 0) (type default)) (uuid "w0000023"))
+  (label "GND" (at 78.74 137.16 0) (effects (font (size 1.27 1.27))) (uuid "l0000023"))
+  ;; BMI160 pin 7 SAD → GND (68.58, 147.32)
+  (wire (pts (xy 68.58 147.32) (xy 78.74 147.32)) (stroke (width 0) (type default)) (uuid "w0000024"))
+  (label "GND" (at 78.74 147.32 0) (effects (font (size 1.27 1.27))) (uuid "l0000024"))
+  ;; NEO-6M pin 4 GND (232.41, 104.14)
+  (wire (pts (xy 232.41 104.14) (xy 220.98 104.14)) (stroke (width 0) (type default)) (uuid "w0000025"))
+  (label "GND" (at 220.98 104.14 180) (effects (font (size 1.27 1.27))) (uuid "l0000025"))
+  ;; C1 pin 2 GND (180.34, 58.42)
+  (wire (pts (xy 180.34 58.42) (xy 180.34 60.96)) (stroke (width 0) (type default)) (uuid "w0000026"))
+  (label "GND" (at 180.34 60.96 270) (effects (font (size 1.27 1.27))) (uuid "l0000026"))
+  ;; C2 pin 2 GND (45.72, 133.35)
+  (wire (pts (xy 45.72 133.35) (xy 45.72 135.89)) (stroke (width 0) (type default)) (uuid "w0000027"))
+  (label "GND" (at 45.72 135.89 270) (effects (font (size 1.27 1.27))) (uuid "l0000027"))
+  ;; C3 pin 2 GND (220.98, 93.98)
+  (wire (pts (xy 220.98 93.98) (xy 220.98 91.44)) (stroke (width 0) (type default)) (uuid "w0000028"))
+  (label "GND" (at 220.98 91.44 90) (effects (font (size 1.27 1.27))) (uuid "l0000028"))
+
+  ;; --- UART0_TX net (Pico GP0 → J1 TX) ---
+  ;; Pico pin 1 GP0/TX0 (135.89, 87.63)
+  (wire (pts (xy 135.89 87.63) (xy 127 87.63)) (stroke (width 0) (type default)) (uuid "w0000030"))
+  (label "UART0_TX" (at 127 87.63 180) (effects (font (size 1.27 1.27))) (uuid "l0000030"))
+  ;; J1 pin 3 TX (156.21, 57.15)
+  (wire (pts (xy 156.21 57.15) (xy 170.18 57.15)) (stroke (width 0) (type default)) (uuid "w0000031"))
+  (label "UART0_TX" (at 170.18 57.15 0) (effects (font (size 1.27 1.27))) (uuid "l0000031"))
+
+  ;; --- UART0_RX net (Pico GP1 → J1 RX) ---
+  ;; Pico pin 2 GP1/RX0 (135.89, 90.17)
+  (wire (pts (xy 135.89 90.17) (xy 127 90.17)) (stroke (width 0) (type default)) (uuid "w0000032"))
+  (label "UART0_RX" (at 127 90.17 180) (effects (font (size 1.27 1.27))) (uuid "l0000032"))
+  ;; J1 pin 4 RX (156.21, 59.69)
+  (wire (pts (xy 156.21 59.69) (xy 170.18 59.69)) (stroke (width 0) (type default)) (uuid "w0000033"))
+  (label "UART0_RX" (at 170.18 59.69 0) (effects (font (size 1.27 1.27))) (uuid "l0000033"))
+
+  ;; --- UART1_TX net (Pico GP4 → NEO-6M RX) ---
+  ;; Pico pin 6 GP4/TX1 (135.89, 97.79)
+  (wire (pts (xy 135.89 97.79) (xy 127 97.79)) (stroke (width 0) (type default)) (uuid "w0000034"))
+  (label "UART1_TX" (at 127 97.79 180) (effects (font (size 1.27 1.27))) (uuid "l0000034"))
+  ;; NEO-6M pin 2 RX (232.41, 99.06)
+  (wire (pts (xy 232.41 99.06) (xy 220.98 99.06)) (stroke (width 0) (type default)) (uuid "w0000035"))
+  (label "UART1_TX" (at 220.98 99.06 180) (effects (font (size 1.27 1.27))) (uuid "l0000035"))
+
+  ;; --- UART1_RX net (NEO-6M TX → Pico GP5) ---
+  ;; Pico pin 7 GP5/RX1 (135.89, 100.33)
+  (wire (pts (xy 135.89 100.33) (xy 127 100.33)) (stroke (width 0) (type default)) (uuid "w0000036"))
+  (label "UART1_RX" (at 127 100.33 180) (effects (font (size 1.27 1.27))) (uuid "l0000036"))
+  ;; NEO-6M pin 3 TX (232.41, 101.6)
+  (wire (pts (xy 232.41 101.6) (xy 220.98 101.6)) (stroke (width 0) (type default)) (uuid "w0000037"))
+  (label "UART1_RX" (at 220.98 101.6 180) (effects (font (size 1.27 1.27))) (uuid "l0000037"))
+
+  ;; --- I2C_SDA net (Pico GP14 → BMI160 SDA → R1) ---
+  ;; Pico pin 19 GP14/SDA (135.89, 107.95)
+  (wire (pts (xy 135.89 107.95) (xy 127 107.95)) (stroke (width 0) (type default)) (uuid "w0000040"))
+  (label "I2C_SDA" (at 127 107.95 180) (effects (font (size 1.27 1.27))) (uuid "l0000040"))
+  ;; BMI160 pin 5 SDA (68.58, 142.24)
+  (wire (pts (xy 68.58 142.24) (xy 78.74 142.24)) (stroke (width 0) (type default)) (uuid "w0000041"))
+  (label "I2C_SDA" (at 78.74 142.24 0) (effects (font (size 1.27 1.27))) (uuid "l0000041"))
+  ;; R1 pin 2 (82.55, 124.46)
+  (wire (pts (xy 82.55 124.46) (xy 82.55 127)) (stroke (width 0) (type default)) (uuid "w0000042"))
+  (label "I2C_SDA" (at 82.55 127 270) (effects (font (size 1.27 1.27))) (uuid "l0000042"))
+
+  ;; --- I2C_SCL net (Pico GP15 → BMI160 SCL → R2) ---
+  ;; Pico pin 20 GP15/SCL (135.89, 110.49)
+  (wire (pts (xy 135.89 110.49) (xy 127 110.49)) (stroke (width 0) (type default)) (uuid "w0000043"))
+  (label "I2C_SCL" (at 127 110.49 180) (effects (font (size 1.27 1.27))) (uuid "l0000043"))
+  ;; BMI160 pin 4 SCL (68.58, 139.7)
+  (wire (pts (xy 68.58 139.7) (xy 78.74 139.7)) (stroke (width 0) (type default)) (uuid "w0000044"))
+  (label "I2C_SCL" (at 78.74 139.7 0) (effects (font (size 1.27 1.27))) (uuid "l0000044"))
+  ;; R2 pin 2 (92.71, 124.46)
+  (wire (pts (xy 92.71 124.46) (xy 92.71 127)) (stroke (width 0) (type default)) (uuid "w0000045"))
+  (label "I2C_SCL" (at 92.71 127 270) (effects (font (size 1.27 1.27))) (uuid "l0000045"))
+
+  ;; --- BMI160 VIN pin 1 = No Connect ---
+  (no_connect (at 68.58 132.08) (uuid "nc000001"))
+)

@@ -1,0 +1,325 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 280" width="680" height="560">
+  <defs>
+    <style>
+      text { font-family: monospace; }
+      .dim { font-size: 7px; fill: #666; }
+      .label { font-size: 6px; fill: #333; font-weight: bold; }
+      .pin-label { font-size: 4.5px; fill: #555; }
+      .pin-used { font-size: 4px; fill: #fff; font-weight: bold; }
+      .title { font-size: 9px; fill: #000; font-weight: bold; }
+      .net-5v { stroke: #e00; stroke-width: 0.8; fill: none; }
+      .net-3v3 { stroke: #f80; stroke-width: 0.8; fill: none; }
+      .net-gnd { stroke: #000; stroke-width: 0.8; fill: none; }
+      .net-uart { stroke: #07a; stroke-width: 0.6; fill: none; }
+      .net-i2c { stroke: #0a0; stroke-width: 0.6; fill: none; }
+    </style>
+  </defs>
+
+  <!-- Echelle: 4px = 1mm -->
+  <!-- PCB: 75mm x 60mm = 300px x 240px -->
+
+  <text x="170" y="14" text-anchor="middle" class="title">PCB Carrier Board - Pico Sensor Hub (75x60mm)</text>
+
+  <!-- PCB outline -->
+  <rect x="20" y="20" width="300" height="240" rx="4" ry="4"
+        fill="#1a5c1a" stroke="#0a3a0a" stroke-width="1.5"/>
+
+  <!-- Trous de fixation M3 aux coins -->
+  <circle cx="36" cy="36" r="6.4" fill="#333" stroke="#666" stroke-width="0.5"/>
+  <circle cx="304" cy="36" r="6.4" fill="#333" stroke="#666" stroke-width="0.5"/>
+  <circle cx="36" cy="244" r="6.4" fill="#333" stroke="#666" stroke-width="0.5"/>
+  <circle cx="304" cy="244" r="6.4" fill="#333" stroke="#666" stroke-width="0.5"/>
+  <circle cx="36" cy="36" r="2" fill="#1a5c1a"/>
+  <circle cx="304" cy="36" r="2" fill="#1a5c1a"/>
+  <circle cx="36" cy="244" r="2" fill="#1a5c1a"/>
+  <circle cx="304" cy="244" r="2" fill="#1a5c1a"/>
+
+  <!-- ================================================ -->
+  <!-- U1: Raspberry Pi Pico VERTICAL (21mm x 51mm)     -->
+  <!-- 84px x 204px, USB en haut                        -->
+  <!-- Pin pitch: 2.54mm ~ 10px                         -->
+  <!-- Left: pins 1-20 (top to bottom)                  -->
+  <!-- Right: pins 40-21 (top to bottom)                -->
+  <!-- ================================================ -->
+  <rect x="108" y="28" width="84" height="204" rx="2" ry="2"
+        fill="#2d8c2d" stroke="#fff" stroke-width="1"/>
+  <text x="150" y="125" text-anchor="middle" class="label" fill="#fff" font-size="7px">Raspberry</text>
+  <text x="150" y="134" text-anchor="middle" class="label" fill="#fff" font-size="7px">Pi Pico</text>
+  <text x="150" y="145" text-anchor="middle" class="pin-label" fill="#cfc">21 x 51mm</text>
+
+  <!-- USB connector (haut) -->
+  <rect x="138" y="22" width="24" height="10" rx="1" fill="#aaa" stroke="#888"/>
+  <text x="150" y="30" text-anchor="middle" class="pin-label" fill="#333">USB</text>
+
+  <!-- ======== Left pins (1-20, top to bottom) ======== -->
+  <!-- All 20 pin dots -->
+  <g>
+    <!-- Pin 1 GP0/TX0 -->
+    <rect x="102" y="35" width="8" height="3" fill="#fc0"/>
+    <text x="99" y="38" text-anchor="end" class="pin-used" fill="#fc0">GP0 TX0  1</text>
+    <!-- Pin 2 GP1/RX0 -->
+    <rect x="102" y="45" width="8" height="3" fill="#fc0"/>
+    <text x="99" y="48" text-anchor="end" class="pin-used" fill="#fc0">GP1 RX0  2</text>
+    <!-- Pin 3 GND -->
+    <rect x="102" y="55" width="8" height="3" fill="#555"/>
+    <text x="99" y="58" text-anchor="end" class="pin-label">GND  3</text>
+    <!-- Pin 4 GP2 -->
+    <rect x="102" y="65" width="8" height="3" fill="#888"/>
+    <!-- Pin 5 GP3 -->
+    <rect x="102" y="75" width="8" height="3" fill="#888"/>
+    <!-- Pin 6 GP4/TX1 -->
+    <rect x="102" y="85" width="8" height="3" fill="#0af"/>
+    <text x="99" y="88" text-anchor="end" class="pin-used" fill="#0af">GP4 TX1  6</text>
+    <!-- Pin 7 GP5/RX1 -->
+    <rect x="102" y="95" width="8" height="3" fill="#0af"/>
+    <text x="99" y="98" text-anchor="end" class="pin-used" fill="#0af">GP5 RX1  7</text>
+    <!-- Pin 8 GND -->
+    <rect x="102" y="105" width="8" height="3" fill="#555"/>
+    <!-- Pin 9-12 -->
+    <rect x="102" y="115" width="8" height="3" fill="#888"/>
+    <rect x="102" y="125" width="8" height="3" fill="#888"/>
+    <rect x="102" y="135" width="8" height="3" fill="#888"/>
+    <rect x="102" y="145" width="8" height="3" fill="#888"/>
+    <!-- Pin 13 GND -->
+    <rect x="102" y="155" width="8" height="3" fill="#555"/>
+    <!-- Pin 14-17 -->
+    <rect x="102" y="165" width="8" height="3" fill="#888"/>
+    <rect x="102" y="175" width="8" height="3" fill="#888"/>
+    <rect x="102" y="185" width="8" height="3" fill="#888"/>
+    <rect x="102" y="195" width="8" height="3" fill="#888"/>
+    <!-- Pin 18 GND -->
+    <rect x="102" y="205" width="8" height="3" fill="#555"/>
+    <!-- Pin 19 GP14/SDA -->
+    <rect x="102" y="215" width="8" height="3" fill="#0c0"/>
+    <text x="99" y="218" text-anchor="end" class="pin-used" fill="#0c0">GP14 SDA 19</text>
+    <!-- Pin 20 GP15/SCL -->
+    <rect x="102" y="225" width="8" height="3" fill="#0c0"/>
+    <text x="99" y="228" text-anchor="end" class="pin-used" fill="#0c0">GP15 SCL 20</text>
+  </g>
+
+  <!-- ======== Right pins (40-21, top to bottom) ======== -->
+  <g>
+    <!-- Pin 40 VBUS -->
+    <rect x="190" y="35" width="8" height="3" fill="#888"/>
+    <text x="201" y="38" class="pin-label">40 VBUS</text>
+    <!-- Pin 39 VSYS -->
+    <rect x="190" y="45" width="8" height="3" fill="#f00"/>
+    <text x="201" y="48" class="pin-used" fill="#f00">39 VSYS</text>
+    <!-- Pin 38 GND -->
+    <rect x="190" y="55" width="8" height="3" fill="#555"/>
+    <text x="201" y="58" class="pin-label">38 GND</text>
+    <!-- Pin 37 3V3_EN -->
+    <rect x="190" y="65" width="8" height="3" fill="#888"/>
+    <!-- Pin 36 3V3_OUT -->
+    <rect x="190" y="75" width="8" height="3" fill="#f80"/>
+    <text x="201" y="78" class="pin-used" fill="#f80">36 3V3_OUT</text>
+    <!-- Pin 35 ADC_VREF -->
+    <rect x="190" y="85" width="8" height="3" fill="#888"/>
+    <!-- Pin 34 GP28 -->
+    <rect x="190" y="95" width="8" height="3" fill="#888"/>
+    <!-- Pin 33 GND -->
+    <rect x="190" y="105" width="8" height="3" fill="#555"/>
+    <!-- Pin 32-26 -->
+    <rect x="190" y="115" width="8" height="3" fill="#888"/>
+    <rect x="190" y="125" width="8" height="3" fill="#888"/>
+    <rect x="190" y="135" width="8" height="3" fill="#888"/>
+    <rect x="190" y="145" width="8" height="3" fill="#888"/>
+    <rect x="190" y="155" width="8" height="3" fill="#888"/>
+    <rect x="190" y="165" width="8" height="3" fill="#888"/>
+    <rect x="190" y="175" width="8" height="3" fill="#888"/>
+    <!-- Pin 25-21 -->
+    <rect x="190" y="185" width="8" height="3" fill="#888"/>
+    <rect x="190" y="195" width="8" height="3" fill="#888"/>
+    <rect x="190" y="205" width="8" height="3" fill="#555"/>
+    <rect x="190" y="215" width="8" height="3" fill="#888"/>
+    <rect x="190" y="225" width="8" height="3" fill="#888"/>
+  </g>
+
+  <!-- ================================================ -->
+  <!-- J1: Bornier 4 pins (20mm x 8mm) en haut gauche  -->
+  <!-- Proche GP0/GP1 (pins 1-2)                        -->
+  <!-- ================================================ -->
+  <rect x="24" y="28" width="64" height="28" rx="1" ry="1"
+        fill="#666" stroke="#fff" stroke-width="0.8"/>
+  <text x="56" y="38" text-anchor="middle" class="label" fill="#fff">BORNIER J1</text>
+  <text x="56" y="52" text-anchor="middle" class="pin-label" fill="#ccc">5V GND TX RX</text>
+  <rect x="30" y="43" width="6" height="6" fill="#f00" stroke="#fff" stroke-width="0.3"/>
+  <rect x="42" y="43" width="6" height="6" fill="#333" stroke="#fff" stroke-width="0.3"/>
+  <rect x="54" y="43" width="6" height="6" fill="#fc0" stroke="#fff" stroke-width="0.3"/>
+  <rect x="66" y="43" width="6" height="6" fill="#fc0" stroke="#fff" stroke-width="0.3"/>
+
+  <!-- ================================================ -->
+  <!-- U2: BMI160 (15mm x 14mm) en bas gauche           -->
+  <!-- Proche GP14/GP15 (pins 19-20)                    -->
+  <!-- ================================================ -->
+  <rect x="24" y="190" width="60" height="56" rx="2" ry="2"
+        fill="#4a4a8a" stroke="#fff" stroke-width="0.8"/>
+  <text x="54" y="215" text-anchor="middle" class="label" fill="#fff">BMI160</text>
+  <text x="54" y="224" text-anchor="middle" class="pin-label" fill="#aaf">(U2)</text>
+
+  <!-- BMI160 pins (right side, header vers le Pico) -->
+  <text x="88" y="195" class="pin-label">VIN (nc)</text>
+  <circle cx="84" cy="193" r="1.5" fill="#888"/>
+  <text x="88" y="201" class="pin-label">3V3</text>
+  <circle cx="84" cy="199" r="1.5" fill="#f80"/>
+  <text x="88" y="207" class="pin-label">GND</text>
+  <circle cx="84" cy="205" r="1.5" fill="#333"/>
+  <text x="88" y="213" class="pin-label">SCL</text>
+  <circle cx="84" cy="211" r="1.5" fill="#0c0"/>
+  <text x="88" y="219" class="pin-label">SDA</text>
+  <circle cx="84" cy="217" r="1.5" fill="#0c0"/>
+  <text x="88" y="225" class="pin-label">CS</text>
+  <circle cx="84" cy="223" r="1.5" fill="#f80"/>
+  <text x="88" y="231" class="pin-label">SAD</text>
+  <circle cx="84" cy="229" r="1.5" fill="#333"/>
+
+  <!-- ================================================ -->
+  <!-- U3: NEO-6M (22mm x 22mm) en bas droite           -->
+  <!-- Antenne en bord de carte                         -->
+  <!-- ================================================ -->
+  <rect x="210" y="162" width="70" height="44" rx="2" ry="2"
+        fill="#8a6a2a" stroke="#fff" stroke-width="0.8"/>
+  <text x="245" y="180" text-anchor="middle" class="label" fill="#fff">NEO-6M</text>
+  <text x="245" y="189" text-anchor="middle" class="pin-label" fill="#fda">(U3)</text>
+  <!-- Connecteur u.FL antenne externe -->
+  <circle cx="265" cy="170" r="4" fill="#888" stroke="#fff" stroke-width="0.4"/>
+  <text x="265" y="171" text-anchor="middle" class="pin-label" fill="#fff">uFL</text>
+  <text x="265" y="200" text-anchor="middle" class="pin-label" fill="#fda">Antenne ext.</text>
+
+  <!-- NEO-6M pins (left side) -->
+  <text x="206" y="171" text-anchor="end" class="pin-label">VCC</text>
+  <circle cx="210" cy="169" r="1.5" fill="#f00"/>
+  <text x="206" y="181" text-anchor="end" class="pin-label">RX</text>
+  <circle cx="210" cy="179" r="1.5" fill="#0af"/>
+  <text x="206" y="191" text-anchor="end" class="pin-label">TX</text>
+  <circle cx="210" cy="189" r="1.5" fill="#0af"/>
+  <text x="206" y="201" text-anchor="end" class="pin-label">GND</text>
+  <circle cx="210" cy="199" r="1.5" fill="#333"/>
+
+  <!-- ================================================ -->
+  <!-- Condensateurs                                     -->
+  <!-- ================================================ -->
+  <!-- C1 - proche VSYS (pin 39) -->
+  <rect x="216" y="42" width="10" height="5" fill="#c9a54a" stroke="#fff" stroke-width="0.3"/>
+  <text x="221" y="40" text-anchor="middle" class="pin-label" fill="#fff">C1</text>
+
+  <!-- C2 - proche BMI160 -->
+  <rect x="24" y="182" width="10" height="5" fill="#c9a54a" stroke="#fff" stroke-width="0.3"/>
+  <text x="29" y="180" text-anchor="middle" class="pin-label" fill="#fff">C2</text>
+
+  <!-- C3 - proche NEO-6M -->
+  <rect x="210" y="152" width="10" height="5" fill="#c9a54a" stroke="#fff" stroke-width="0.3"/>
+  <text x="215" y="150" text-anchor="middle" class="pin-label" fill="#fff">C3</text>
+
+  <!-- ================================================ -->
+  <!-- Resistances I2C pull-up (optionnel)               -->
+  <!-- ================================================ -->
+  <rect x="96" y="236" width="10" height="4" fill="#a0522d" stroke="#fff" stroke-width="0.3"/>
+  <text x="101" y="234" text-anchor="middle" class="pin-label" fill="#fff">R1</text>
+  <rect x="96" y="244" width="10" height="4" fill="#a0522d" stroke="#fff" stroke-width="0.3"/>
+  <text x="101" y="250" text-anchor="middle" class="pin-label" fill="#fff">R2</text>
+
+  <!-- ================================================ -->
+  <!-- PISTES / CONNEXIONS                               -->
+  <!-- ================================================ -->
+
+  <!-- 5V: J1 pin1 (5V) → Pico VSYS (pin 39) -->
+  <line x1="33" y1="49" x2="33" y2="62" class="net-5v"/>
+  <line x1="33" y1="62" x2="96" y2="62" class="net-5v"/>
+  <line x1="96" y1="62" x2="96" y2="46" class="net-5v"/>
+  <line x1="96" y1="46" x2="190" y2="46" class="net-5v"/>
+
+  <!-- 5V: VSYS → C1 -->
+  <line x1="198" y1="46" x2="216" y2="46" class="net-5v"/>
+
+  <!-- 5V: VSYS → NEO-6M VCC -->
+  <line x1="216" y1="46" x2="230" y2="46" class="net-5v"/>
+  <line x1="230" y1="46" x2="230" y2="140" class="net-5v"/>
+  <line x1="230" y1="140" x2="214" y2="140" class="net-5v"/>
+  <line x1="214" y1="140" x2="214" y2="169" class="net-5v"/>
+
+  <!-- 3V3: pin 36 → BMI160 3V3 -->
+  <line x1="198" y1="76" x2="240" y2="76" class="net-3v3"/>
+  <line x1="240" y1="76" x2="240" y2="130" class="net-3v3"/>
+  <line x1="240" y1="130" x2="96" y2="130" class="net-3v3"/>
+  <line x1="96" y1="130" x2="96" y2="199" class="net-3v3"/>
+  <line x1="96" y1="199" x2="84" y2="199" class="net-3v3"/>
+
+  <!-- 3V3: → BMI160 CS pin -->
+  <line x1="90" y1="199" x2="90" y2="223" class="net-3v3"/>
+  <line x1="90" y1="223" x2="84" y2="223" class="net-3v3"/>
+
+  <!-- GND: J1 pin2 → Pico GND (pin 38) -->
+  <line x1="45" y1="49" x2="45" y2="56" class="net-gnd"/>
+  <line x1="45" y1="56" x2="190" y2="56" class="net-gnd"/>
+
+  <!-- GND: Pico → BMI160 GND + SAD -->
+  <line x1="102" y1="206" x2="96" y2="206" class="net-gnd"/>
+  <line x1="96" y1="206" x2="84" y2="206" class="net-gnd"/>
+  <line x1="86" y1="229" x2="96" y2="229" class="net-gnd"/>
+  <line x1="96" y1="229" x2="96" y2="206" class="net-gnd"/>
+
+  <!-- GND: Pico → NEO-6M GND -->
+  <line x1="190" y1="56" x2="202" y2="56" class="net-gnd"/>
+  <line x1="202" y1="56" x2="202" y2="199" class="net-gnd"/>
+  <line x1="202" y1="199" x2="210" y2="199" class="net-gnd"/>
+
+  <!-- UART0 TX: GP0 (pin 1) → J1 pin3 (TX) -->
+  <line x1="102" y1="37" x2="57" y2="37" class="net-uart"/>
+  <line x1="57" y1="37" x2="57" y2="43" class="net-uart"/>
+
+  <!-- UART0 RX: GP1 (pin 2) → J1 pin4 (RX) -->
+  <line x1="102" y1="47" x2="69" y2="47" class="net-uart"/>
+  <line x1="69" y1="47" x2="69" y2="49" class="net-uart"/>
+
+  <!-- UART1 TX: GP4 (pin 6) → NEO-6M RX -->
+  <line x1="102" y1="86" x2="96" y2="86" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="96" y1="86" x2="96" y2="140" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="96" y1="140" x2="160" y2="140" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="160" y1="140" x2="160" y2="179" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="160" y1="179" x2="210" y2="179" class="net-uart" stroke-dasharray="3,2"/>
+
+  <!-- UART1 RX: GP5 (pin 7) → NEO-6M TX -->
+  <line x1="102" y1="96" x2="92" y2="96" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="92" y1="96" x2="92" y2="144" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="92" y1="144" x2="156" y2="144" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="156" y1="144" x2="156" y2="189" class="net-uart" stroke-dasharray="3,2"/>
+  <line x1="156" y1="189" x2="210" y2="189" class="net-uart" stroke-dasharray="3,2"/>
+
+  <!-- I2C SDA: GP14 (pin 19) → BMI160 SDA -->
+  <line x1="102" y1="216" x2="96" y2="216" class="net-i2c"/>
+  <line x1="96" y1="216" x2="84" y2="216" class="net-i2c"/>
+
+  <!-- I2C SCL: GP15 (pin 20) → BMI160 SCL -->
+  <line x1="102" y1="226" x2="92" y2="226" class="net-i2c"/>
+  <line x1="92" y1="226" x2="92" y2="211" class="net-i2c"/>
+  <line x1="92" y1="211" x2="84" y2="211" class="net-i2c"/>
+
+  <!-- ================================================ -->
+  <!-- Legende                                           -->
+  <!-- ================================================ -->
+  <rect x="20" y="262" width="300" height="16" fill="#f8f8f0" stroke="#ccc" rx="2"/>
+  <line x1="30" y1="270" x2="42" y2="270" stroke="#e00" stroke-width="1.5"/>
+  <text x="45" y="272" class="pin-label" fill="#333">5V</text>
+  <line x1="60" y1="270" x2="72" y2="270" stroke="#f80" stroke-width="1.5"/>
+  <text x="75" y="272" class="pin-label" fill="#333">3V3</text>
+  <line x1="95" y1="270" x2="107" y2="270" stroke="#000" stroke-width="1.5"/>
+  <text x="110" y="272" class="pin-label" fill="#333">GND</text>
+  <line x1="130" y1="270" x2="142" y2="270" stroke="#07a" stroke-width="1"/>
+  <text x="145" y="272" class="pin-label" fill="#333">UART0</text>
+  <line x1="172" y1="270" x2="184" y2="270" stroke="#07a" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="187" y="272" class="pin-label" fill="#333">UART1</text>
+  <line x1="212" y1="270" x2="224" y2="270" stroke="#0a0" stroke-width="1"/>
+  <text x="227" y="272" class="pin-label" fill="#333">I2C</text>
+
+  <!-- Dimensions -->
+  <line x1="20" y1="16" x2="320" y2="16" stroke="#999" stroke-width="0.3"/>
+  <line x1="20" y1="14" x2="20" y2="18" stroke="#999" stroke-width="0.3"/>
+  <line x1="320" y1="14" x2="320" y2="18" stroke="#999" stroke-width="0.3"/>
+  <text x="170" y="15" text-anchor="middle" class="dim">75mm</text>
+
+  <line x1="326" y1="20" x2="326" y2="260" stroke="#999" stroke-width="0.3"/>
+  <line x1="324" y1="20" x2="328" y2="20" stroke="#999" stroke-width="0.3"/>
+  <line x1="324" y1="260" x2="328" y2="260" stroke="#999" stroke-width="0.3"/>
+  <text x="336" y="143" text-anchor="middle" class="dim" transform="rotate(90,336,143)">60mm</text>
+</svg>
