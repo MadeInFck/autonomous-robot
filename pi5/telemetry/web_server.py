@@ -8,7 +8,9 @@ import json
 import time
 import socket
 import threading
-from flask import Flask, render_template_string, jsonify, request
+from functools import wraps
+from flask import Flask, render_template_string, jsonify, request, Response
+from werkzeug.security import check_password_hash
 from dataclasses import asdict
 
 
@@ -448,16 +450,24 @@ HTML_TEMPLATE = """
                 if (!res.ok) return;
                 const data = await res.json();
                 const list = document.getElementById('waypointList');
+                list.textContent = '';
                 if (!data.waypoints || data.waypoints.length === 0) {
-                    list.innerHTML = 'Aucun waypoint';
+                    list.textContent = 'Aucun waypoint';
                     return;
                 }
-                list.innerHTML = data.waypoints.map(wp =>
-                    `<div class="wp-item ${wp.active ? 'active' : ''}">
-                        <span>${wp.label}: ${wp.latitude.toFixed(5)}, ${wp.longitude.toFixed(5)}</span>
-                        <span class="wp-delete" onclick="deleteWaypoint(${wp.index})">X</span>
-                    </div>`
-                ).join('');
+                data.waypoints.forEach(wp => {
+                    const div = document.createElement('div');
+                    div.className = 'wp-item' + (wp.active ? ' active' : '');
+                    const label = document.createElement('span');
+                    label.textContent = wp.label + ': ' + wp.latitude.toFixed(5) + ', ' + wp.longitude.toFixed(5);
+                    const del = document.createElement('span');
+                    del.className = 'wp-delete';
+                    del.textContent = 'X';
+                    del.addEventListener('click', () => deleteWaypoint(wp.index));
+                    div.appendChild(label);
+                    div.appendChild(del);
+                    list.appendChild(div);
+                });
             } catch(e) {}
         }
         async function deleteWaypoint(idx) {
@@ -513,8 +523,11 @@ class WebServer:
 
     def __init__(self, motor_controller=None, sensor_receiver=None,
                  lidar_scanner=None, patrol_manager=None, pilot=None,
-                 host='0.0.0.0', port=8085):
+                 host='0.0.0.0', port=8085,
+                 auth_username=None, auth_password_hash=None,
+                 ssl_cert=None, ssl_key=None):
         self.app = Flask(__name__)
+        self.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16 KB max
         self.motor_controller = motor_controller
         self.sensor_receiver = sensor_receiver
         self.lidar_scanner = lidar_scanner
@@ -524,9 +537,42 @@ class WebServer:
         self.port = port
         self._thread = None
         self._running = False
+        self._auth_username = auth_username
+        self._auth_password_hash = auth_password_hash
+        self._ssl_context = (ssl_cert, ssl_key) if ssl_cert and ssl_key else None
         self._register_routes()
 
+    def _require_auth(self, f):
+        """Decorator: HTTP Basic Auth si username/hash configures"""
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not self._auth_username or not self._auth_password_hash:
+                return f(*args, **kwargs)
+            auth = request.authorization
+            if not auth or auth.username != self._auth_username \
+               or not check_password_hash(self._auth_password_hash, auth.password):
+                return Response(
+                    'Authentification requise', 401,
+                    {'WWW-Authenticate': 'Basic realm="Robot Mecanum"'}
+                )
+            return f(*args, **kwargs)
+        return decorated
+
     def _register_routes(self):
+
+        # Apply auth to all requests
+        @self.app.before_request
+        def check_auth():
+            if not self._auth_username or not self._auth_password_hash:
+                return None
+            auth = request.authorization
+            if not auth or auth.username != self._auth_username \
+               or not check_password_hash(self._auth_password_hash, auth.password):
+                return Response(
+                    'Authentification requise', 401,
+                    {'WWW-Authenticate': 'Basic realm="Robot Mecanum"'}
+                )
+
         # --- Existing routes ---
 
         @self.app.route('/')
@@ -537,10 +583,10 @@ class WebServer:
         def api_move():
             try:
                 data = request.get_json()
-                vx = float(data.get('vx', 0))
-                vy = float(data.get('vy', 0))
-                omega = float(data.get('omega', 0))
-                speed = int(data.get('speed', 50))
+                vx = max(-1.0, min(1.0, float(data.get('vx', 0))))
+                vy = max(-1.0, min(1.0, float(data.get('vy', 0))))
+                omega = max(-1.0, min(1.0, float(data.get('omega', 0))))
+                speed = max(0, min(100, int(data.get('speed', 50))))
 
                 motors = None
                 if self.motor_controller:
@@ -548,8 +594,8 @@ class WebServer:
                     motors = self.motor_controller.get_status()
 
                 return jsonify({'status': 'ok', 'motors': motors})
-            except Exception as e:
-                return jsonify({'status': 'error', 'message': str(e)}), 400
+            except Exception:
+                return jsonify({'status': 'error', 'message': 'Requete invalide'}), 400
 
         @self.app.route('/api/sensors')
         def api_sensors():
@@ -676,24 +722,29 @@ class WebServer:
 
     def start(self, threaded=True):
         local_ip = get_local_ip()
-        url = f"http://{local_ip}:{self.port}"
+        scheme = "https" if self._ssl_context else "http"
+        url = f"{scheme}://{local_ip}:{self.port}"
+        run_kwargs = dict(host=self.host, port=self.port, debug=False, use_reloader=False)
+        if self._ssl_context:
+            run_kwargs['ssl_context'] = self._ssl_context
 
         if threaded:
             self._running = True
             self._thread = threading.Thread(
-                target=lambda: self.app.run(host=self.host, port=self.port, debug=False, use_reloader=False),
+                target=lambda: self.app.run(**run_kwargs),
                 daemon=True
             )
             self._thread.start()
             print(f"Serveur web: {url}")
         else:
             print(f"Serveur web: {url}")
-            self.app.run(host=self.host, port=self.port, debug=False)
+            self.app.run(**run_kwargs)
 
         return url
 
     def get_url(self):
-        return f"http://{get_local_ip()}:{self.port}"
+        scheme = "https" if self._ssl_context else "http"
+        return f"{scheme}://{get_local_ip()}:{self.port}"
 
     def stop(self):
         self._running = False

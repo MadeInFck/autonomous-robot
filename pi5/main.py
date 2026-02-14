@@ -33,7 +33,9 @@ class RobotApp:
 
     def __init__(self, enable_motors=True, enable_sensors=True,
                  enable_lidar=True, lidar_port=LIDAR_PORT,
-                 web_port=WEB_PORT):
+                 web_port=WEB_PORT,
+                 auth_username=None, auth_password_hash=None,
+                 ssl_cert=None, ssl_key=None):
         self.motor_controller = None
         self.sensor_receiver = None
         self.lidar_scanner = None
@@ -126,7 +128,15 @@ class RobotApp:
             patrol_manager=self.patrol_manager,
             pilot=self.pilot,
             port=web_port,
+            auth_username=auth_username,
+            auth_password_hash=auth_password_hash,
+            ssl_cert=ssl_cert,
+            ssl_key=ssl_key,
         )
+        if auth_username:
+            print("[Web] Authentification activee")
+        if ssl_cert:
+            print("[Web] TLS actif")
 
     def _on_sensor_data(self, data: SensorData):
         """Callback pour donnees capteurs recues"""
@@ -217,6 +227,34 @@ class RobotApp:
         print("\nProgramme termine")
 
 
+def load_web_config():
+    """Charge la config auth + TLS depuis robot_config.yaml"""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '..', 'config', 'robot_config.yaml')
+    base_dir = os.path.dirname(config_path)
+    try:
+        import yaml
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f)
+        auth = cfg.get('auth', {})
+        tls = cfg.get('tls', {})
+        # Resolve cert/key paths relative to project root
+        ssl_cert = tls.get('cert')
+        ssl_key = tls.get('key')
+        if ssl_cert and not os.path.isabs(ssl_cert):
+            ssl_cert = os.path.join(base_dir, ssl_cert)
+        if ssl_key and not os.path.isabs(ssl_key):
+            ssl_key = os.path.join(base_dir, ssl_key)
+        # Only use TLS if both files exist
+        if ssl_cert and ssl_key and os.path.exists(ssl_cert) and os.path.exists(ssl_key):
+            pass
+        else:
+            ssl_cert, ssl_key = None, None
+        return auth.get('username'), auth.get('password_hash'), ssl_cert, ssl_key
+    except Exception:
+        return None, None, None, None
+
+
 def main():
     parser = argparse.ArgumentParser(description='Robot Mecanum Controller')
     parser.add_argument('--no-motors', action='store_true',
@@ -229,8 +267,14 @@ def main():
                         help=f'Port LiDAR (defaut: {LIDAR_PORT})')
     parser.add_argument('--port', type=int, default=WEB_PORT,
                         help=f'Port serveur web (defaut: {WEB_PORT})')
+    parser.add_argument('--no-auth', action='store_true',
+                        help='Desactiver l\'authentification')
 
     args = parser.parse_args()
+
+    auth_user, auth_hash, ssl_cert, ssl_key = load_web_config()
+    if args.no_auth:
+        auth_user, auth_hash = None, None
 
     app = RobotApp(
         enable_motors=not args.no_motors,
@@ -238,6 +282,10 @@ def main():
         enable_lidar=not args.no_lidar,
         lidar_port=args.lidar_port,
         web_port=args.port,
+        auth_username=auth_user,
+        auth_password_hash=auth_hash,
+        ssl_cert=ssl_cert,
+        ssl_key=ssl_key,
     )
 
     def signal_handler(sig, frame):
