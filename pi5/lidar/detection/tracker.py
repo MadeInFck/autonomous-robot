@@ -1,4 +1,4 @@
-"""Suivi temporel des obstacles entre frames successifs."""
+"""Temporal tracking of obstacles between successive frames."""
 
 from dataclasses import dataclass, field
 
@@ -9,7 +9,7 @@ from lidar.detection.types import BoundingBox, DetectionResult, LineSegment, Obs
 
 @dataclass
 class TrackedObstacle:
-    """Un obstacle suivi dans le temps."""
+    """An obstacle tracked over time."""
     track_id: int
     obstacle: Obstacle
     hits: int = 1
@@ -28,14 +28,14 @@ class TrackedObstacle:
 
 
 class ObstacleTracker:
-    """Associe les obstacles entre frames pour un affichage stable.
+    """Associates obstacles between frames for stable display.
 
-    Pipeline par frame :
-      1. Association par proximite centroide (greedy, plus proche d'abord)
-      2. Mise a jour EMA des tracks associes
-      3. Nouveaux tracks pour les obstacles non associes
-      4. Suppression des tracks non vus depuis max_age frames
-      5. Retour des tracks confirmes (hits >= min_hits)
+    Pipeline per frame:
+      1. Association by centroid proximity (greedy, nearest first)
+      2. EMA update of associated tracks
+      3. New tracks for unassociated obstacles
+      4. Removal of tracks unseen for max_age frames
+      5. Return confirmed tracks (hits >= min_hits)
     """
 
     def __init__(
@@ -54,7 +54,7 @@ class ObstacleTracker:
         self._next_id = 0
 
     def update(self, result: DetectionResult) -> DetectionResult:
-        """Met a jour les tracks avec un nouveau DetectionResult."""
+        """Updates the tracks with a new DetectionResult."""
         new_obstacles = result.obstacles
         matched_track_indices: set[int] = set()
         matched_obs_indices: set[int] = set()

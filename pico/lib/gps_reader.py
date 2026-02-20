@@ -1,28 +1,28 @@
 """
-Lecteur GPS NEO-6M pour Raspberry Pi Pico (MicroPython)
-Utilise micropyGPS pour parser les trames NMEA
+NEO-6M GPS reader for Raspberry Pi Pico (MicroPython)
+Uses micropyGPS to parse NMEA sentences
 """
 
 
 class GPSReader:
-    """Lecteur GPS avec parser NMEA intégré"""
+    """GPS reader with built-in NMEA parser"""
 
     def __init__(self, uart, parser):
         """
-        Initialise le lecteur GPS
+        Initialize the GPS reader
 
         Args:
-            uart: Instance UART MicroPython connectée au GPS
-            parser: Instance MicropyGPS pour parsing NMEA
+            uart: MicroPython UART instance connected to the GPS
+            parser: MicropyGPS instance for NMEA parsing
         """
         self.uart = uart
         self.parser = parser
 
     def update(self):
         """
-        Lit et parse les données GPS disponibles
+        Read and parse available GPS data
 
-        Appeler régulièrement dans la boucle principale
+        Call regularly in the main loop
         """
         while self.uart.any():
             char = self.uart.read(1)
@@ -34,17 +34,17 @@ class GPSReader:
 
     def read(self):
         """
-        Lit les données GPS actuelles
+        Read current GPS data
 
         Returns:
             dict: {lat, lon, alt, speed, course, satellites, valid}
         """
-        # Mettre à jour le parser avec les données disponibles
+        # Update the parser with available data
         self.update()
 
-        # Vérifier si fix valide
+        # Check if fix is valid
         if self.parser.valid and self.parser.fix_stat > 0:
-            # Latitude en degrés décimaux
+            # Latitude in decimal degrees
             lat = self.parser.latitude
             if self.parser.coord_format == 'dd':
                 lat_dd = lat[0]
@@ -53,7 +53,7 @@ class GPSReader:
             if len(lat) > 1 and lat[-1] == 'S':
                 lat_dd = -lat_dd
 
-            # Longitude en degrés décimaux
+            # Longitude in decimal degrees
             lon = self.parser.longitude
             if self.parser.coord_format == 'dd':
                 lon_dd = lon[0]
@@ -62,7 +62,7 @@ class GPSReader:
             if len(lon) > 1 and lon[-1] == 'W':
                 lon_dd = -lon_dd
 
-            # Vitesse (km/h -> m/s)
+            # Speed (km/h -> m/s)
             speed_ms = self.parser.speed[2] / 3.6 if self.parser.speed else 0.0
 
             # Altitude
@@ -84,7 +84,7 @@ class GPSReader:
                 'valid': True
             }
 
-        # Pas de fix
+        # No fix
         return {
             'lat': 0.0,
             'lon': 0.0,
@@ -96,11 +96,11 @@ class GPSReader:
         }
 
     def has_fix(self):
-        """Retourne True si GPS a un fix valide"""
+        """Return True if GPS has a valid fix"""
         return self.parser.valid and self.parser.fix_stat > 0
 
 
-# Test du module
+# Module test
 if __name__ == "__main__":
     from machine import UART, Pin
     from micropyGPS import MicropyGPS

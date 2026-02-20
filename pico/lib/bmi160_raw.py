@@ -1,11 +1,11 @@
 """
-Driver BMI160 pour Raspberry Pi Pico (MicroPython)
-Lecture données brutes accéléromètre + gyroscope
+BMI160 driver for Raspberry Pi Pico (MicroPython)
+Raw accelerometer + gyroscope data reading
 """
 
 import time
 
-# Registres BMI160
+# BMI160 registers
 BMI160_CMD = 0x7E
 BMI160_DATA = 0x0C  # Gyro X LSB (6 bytes gyro + 6 bytes accel)
 BMI160_CMD_ACC_NORMAL = 0x11
@@ -13,25 +13,25 @@ BMI160_CMD_GYR_NORMAL = 0x15
 
 
 class BMI160Raw:
-    """Driver BMI160 pour données brutes acc/gyr"""
+    """BMI160 driver for raw acc/gyr data"""
 
     def __init__(self, i2c, addr=0x68):
         """
-        Initialise le capteur BMI160
+        Initialize the BMI160 sensor
 
         Args:
-            i2c: Instance I2C MicroPython
-            addr: Adresse I2C (0x68 par défaut, 0x69 si SDO=HIGH)
+            i2c: MicroPython I2C instance
+            addr: I2C address (0x68 by default, 0x69 if SDO=HIGH)
         """
         self.i2c = i2c
         self.addr = addr
         self._error = False
 
-        # Sensibilités par défaut (plage ±2g, ±250°/s)
+        # Default sensitivities (range +/-2g, +/-250 deg/s)
         self.accel_scale = 16384.0  # LSB/g
         self.gyro_scale = 131.0     # LSB/(°/s)
 
-        # Offsets calibration
+        # Calibration offsets
         self.ax_off = 0
         self.ay_off = 0
         self.az_off = 0
@@ -42,12 +42,12 @@ class BMI160Raw:
         self._init_sensor()
 
     def _init_sensor(self):
-        """Initialise BMI160 en mode normal (acc + gyro)"""
+        """Initialize BMI160 in normal mode (acc + gyro)"""
         try:
-            # Activer accéléromètre
+            # Enable accelerometer
             self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_ACC_NORMAL]))
             time.sleep(0.05)
-            # Activer gyroscope
+            # Enable gyroscope
             self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_GYR_NORMAL]))
             time.sleep(0.1)
             self._error = False
@@ -58,10 +58,10 @@ class BMI160Raw:
 
     def calibrate(self, samples=50):
         """
-        Calibration au repos (capteur horizontal immobile)
+        At-rest calibration (sensor horizontal and stationary)
 
         Args:
-            samples: Nombre d'échantillons pour moyenner
+            samples: Number of samples to average
         """
         if self._error:
             return
@@ -82,7 +82,7 @@ class BMI160Raw:
 
         self.ax_off = ax_sum // samples
         self.ay_off = ay_sum // samples
-        self.az_off = az_sum // samples - int(self.accel_scale)  # Z = 1g au repos
+        self.az_off = az_sum // samples - int(self.accel_scale)  # Z = 1g at rest
         self.gx_off = gx_sum // samples
         self.gy_off = gy_sum // samples
         self.gz_off = gz_sum // samples
@@ -92,13 +92,13 @@ class BMI160Raw:
 
     def read_raw(self):
         """
-        Lit les données brutes (LSB)
+        Read raw data (LSB)
 
         Returns:
-            dict: {ax, ay, az, gx, gy, gz} en LSB
+            dict: {ax, ay, az, gx, gy, gz} in LSB
         """
         try:
-            # Lire 12 bytes: GYR_X(2) + GYR_Y(2) + GYR_Z(2) + ACC_X(2) + ACC_Y(2) + ACC_Z(2)
+            # Read 12 bytes: GYR_X(2) + GYR_Y(2) + GYR_Z(2) + ACC_X(2) + ACC_Y(2) + ACC_Z(2)
             data = self.i2c.readfrom_mem(self.addr, BMI160_DATA, 12)
 
             def to_signed(lsb, msb):
@@ -121,19 +121,19 @@ class BMI160Raw:
 
     def read_calibrated(self):
         """
-        Lit les données avec offsets appliqués, en unités physiques
+        Read data with offsets applied, in physical units
 
         Returns:
-            dict: {acc_x, acc_y, acc_z} en g, {gyr_x, gyr_y, gyr_z} en °/s, valid
+            dict: {acc_x, acc_y, acc_z} in g, {gyr_x, gyr_y, gyr_z} in deg/s, valid
         """
         raw = self.read_raw()
 
-        # Accéléromètre en g
+        # Accelerometer in g
         acc_x = (raw['ax'] - self.ax_off) / self.accel_scale
         acc_y = (raw['ay'] - self.ay_off) / self.accel_scale
         acc_z = (raw['az'] - self.az_off) / self.accel_scale
 
-        # Gyroscope en °/s
+        # Gyroscope in deg/s
         gyr_x = (raw['gx'] - self.gx_off) / self.gyro_scale
         gyr_y = (raw['gy'] - self.gy_off) / self.gyro_scale
         gyr_z = (raw['gz'] - self.gz_off) / self.gyro_scale
@@ -145,11 +145,11 @@ class BMI160Raw:
         }
 
     def has_error(self):
-        """Retourne True si erreur de communication"""
+        """Return True if communication error"""
         return self._error
 
 
-# Test du module
+# Module test
 if __name__ == "__main__":
     from machine import I2C, Pin
 

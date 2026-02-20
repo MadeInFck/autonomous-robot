@@ -1,4 +1,4 @@
-"""Tests de l'evitement d'obstacles (ObstacleAvoider)."""
+"""Tests for obstacle avoidance (ObstacleAvoider)."""
 
 import sys
 import os
@@ -14,7 +14,7 @@ from navigation.obstacle_avoider import ObstacleAvoider
 
 
 def make_obstacle(angle_deg: float, distance_mm: float, obstacle_id: int = 0):
-    """Cree un obstacle factice a un angle et distance donnes."""
+    """Create a dummy obstacle at a given angle and distance."""
     angle_rad = np.radians(angle_deg)
     x = distance_mm * np.sin(angle_rad)
     y = distance_mm * np.cos(angle_rad)
@@ -56,7 +56,7 @@ class TestClearPath:
         assert result.clear is True
 
     def test_obstacle_on_side(self, avoider):
-        # Obstacle a 90 degres (droite), chemin devant libre
+        # Obstacle at 90 degrees (right), path ahead is clear
         obs = make_obstacle(angle_deg=90, distance_mm=500)
         detection = DetectionResult(obstacles=[obs])
         result = avoider.evaluate(detection, desired_heading_robot=0)
@@ -76,7 +76,7 @@ class TestAvoidance:
         result = avoider.evaluate(detection, desired_heading_robot=0)
         assert result.clear is False
         assert result.status == "avoiding"
-        # Doit suggerer un cap different de 0
+        # Must suggest a heading different from 0
         assert result.suggested_heading != 0
 
     def test_obstacle_front_left(self, avoider):
@@ -92,17 +92,17 @@ class TestAvoidance:
         assert result.clear is False
 
     def test_suggested_heading_is_free(self, avoider):
-        # Obstacle devant, cotes libres
+        # Obstacle ahead, sides clear
         obs = make_obstacle(angle_deg=0, distance_mm=500)
         detection = DetectionResult(obstacles=[obs])
         result = avoider.evaluate(detection, desired_heading_robot=0)
-        # Le cap suggere ne doit pas etre dans le secteur bloque
+        # The suggested heading must not be in the blocked sector
         assert result.suggested_heading is not None
 
 
 class TestBlocked:
     def test_surrounded(self, avoider):
-        # Obstacles au centre de chaque secteur (15, 45, 75, ...)
+        # Obstacles at the center of each sector (15, 45, 75, ...)
         obstacles = [
             make_obstacle(angle_deg=i * 30 + 15, distance_mm=400, obstacle_id=i)
             for i in range(12)

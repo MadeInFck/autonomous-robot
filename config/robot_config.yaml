@@ -1,47 +1,47 @@
-# Configuration Robot Mecanum Autonome
+# Autonomous Mecanum Robot Configuration
 # Raspberry Pi 5 + Raspberry Pi Pico
 
-# Communication UART (Pi5 ↔ Pico)
+# UART Communication (Pi5 <-> Pico)
 uart:
-  port: /dev/ttyAMA3     # UART3 sur Pi5
+  port: /dev/ttyAMA3     # UART3 on Pi5
   baudrate: 115200
-  protocol: stx_etx      # Protocole avec STX/ETX et CRC-8
+  protocol: stx_etx      # Protocol with STX/ETX and CRC-8
 
-# Pins UART3 sur Pi5
-# GPIO8 (broche 24) = TX → GP1 (Pico RX)
-# GPIO9 (broche 21) = RX ← GP0 (Pico TX)
-# GND (broche 20) = GND
+# UART3 pins on Pi5
+# GPIO8 (pin 24) = TX → GP1 (Pico RX)
+# GPIO9 (pin 21) = RX ← GP0 (Pico TX)
+# GND (pin 20) = GND
 
-# Configuration moteurs Mecanum
-# Carte driver: HW-249 (4x pont en H)
+# Mecanum motor configuration
+# Driver board: HW-249 (4x H-bridge)
 motors:
   type: mecanum
   pwm_frequency: 1000    # Hz
   max_speed: 100         # %
   driver: hw249
 
-  # Disposition des roues (vue de dessus)
+  # Wheel layout (top view)
   #   FL ──── FR
   #   │  ↑   │
-  #   │ AVANT│
+  #   │ FRONT│
   #   RL ──── RR
 
   pins:
-    # Front Left (avant gauche)
-    FL_in1: 17           # GPIO17 - avant
-    FL_in2: 27           # GPIO27 - arrière
+    # Front Left
+    FL_in1: 17           # GPIO17 - forward
+    FL_in2: 27           # GPIO27 - backward
 
-    # Front Right (avant droit)
-    FR_in1: 22           # GPIO22 - avant
-    FR_in2: 23           # GPIO23 - arrière
+    # Front Right
+    FR_in1: 22           # GPIO22 - forward
+    FR_in2: 23           # GPIO23 - backward
 
-    # Rear Left (arrière gauche)
-    RL_in1: 24           # GPIO24 - avant
-    RL_in2: 25           # GPIO25 - arrière
+    # Rear Left
+    RL_in1: 24           # GPIO24 - forward
+    RL_in2: 25           # GPIO25 - backward
 
-    # Rear Right (arrière droit)
-    RR_in1: 5            # GPIO5 - avant
-    RR_in2: 6            # GPIO6 - arrière
+    # Rear Right
+    RR_in1: 5            # GPIO5 - forward
+    RR_in2: 6            # GPIO6 - backward
 
 # LiDAR RPLidar C1 (USB)
 lidar:
@@ -49,34 +49,34 @@ lidar:
   baudrate: 460800
   min_quality: 10
 
-# Navigation autonome et patrouille
+# Autonomous navigation and patrol
 navigation:
-  waypoint_radius: 3.0   # metres - rayon de validation waypoint
-  patrol_speed: 40       # % vitesse max en patrouille
-  obstacle_distance: 800 # mm - distance d'evitement
+  waypoint_radius: 3.0   # meters - waypoint validation radius
+  patrol_speed: 40       # % max speed during patrol
+  obstacle_distance: 800 # mm - avoidance distance
   patrol_file: config/patrol_route.json
-  loop: true             # boucler la patrouille
+  loop: true             # loop the patrol
   pid:
     kp: 1.0
     ki: 0.05
     kd: 0.1
 
-# Authentification et TLS : voir config/secrets.yaml
-# (fichier ignore par git, copier secrets.yaml.example pour commencer)
+# Authentication and TLS: see config/secrets.yaml
+# (file ignored by git, copy secrets.yaml.example to get started)
 
-# Serveur web (télémétrie + contrôle)
+# Web server (telemetry + control)
 telemetry:
   web_server_port: 8085
   update_rate: 10        # Hz
   enable_logging: true
 
-# Capteurs (sur Pico)
+# Sensors (on Pico)
 sensors:
   gps:
     type: neo_6m
-    uart: 0              # UART0 du Pico
+    uart: 0              # Pico UART0
     baudrate: 9600
   imu:
     type: bmi160
-    i2c_bus: 1           # I2C1 du Pico
+    i2c_bus: 1           # Pico I2C1
     address: 0x68

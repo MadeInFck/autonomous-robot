@@ -1,118 +1,120 @@
-# Robot Autonome Mecanum - GPS + IMU
+*[Version française](README_fr.md)*
 
-Robot autonome à roues Mecanum avec architecture distribuée Raspberry Pi 5 + Pico.
+# Autonomous Mecanum Robot - GPS + IMU
+
+Autonomous Mecanum wheeled robot with distributed architecture Raspberry Pi 5 + Pico.
 
 ## Architecture
 
 ```
 Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 ┌─────────────────────────────┐         ┌──────────────────────────────┐
-│ • NEO-6M GPS (UART1)        │         │ • 4 moteurs Mecanum (HW-249) │
-│ • BMI160 IMU (I2C1)         │◄─UART3─►│ • Contrôle omnidirectionnel  │
-│ • Acquisition capteurs 10Hz │         │ • Serveur Flask (WiFi)       │
+│ • NEO-6M GPS (UART1)        │         │ • 4 Mecanum motors (HW-249)  │
+│ • BMI160 IMU (I2C1)         │◄─UART3─►│ • Omnidirectional control    │
+│ • Sensor acquisition 10Hz   │         │ • Flask web server (WiFi)    │
 │ • TX: GP0, RX: GP1          │         │ • TX: GPIO8, RX: GPIO9       │
 └─────────────────────────────┘         └──────────────────────────────┘
                                                      │
                                                      ▼
                                         ┌──────────────────────────────┐
                                         │     Smartphone (WiFi)        │
-                                        │  • Double joystick tactile   │
-                                        │  • Télémétrie temps réel     │
+                                        │  • Dual touch joystick       │
+                                        │  • Real-time telemetry       │
                                         └──────────────────────────────┘
 ```
 
-## Fonctionnalités
+## Features
 
-- **Contrôle Mecanum** : Déplacement omnidirectionnel (avant/arrière, strafe, rotation)
-- **Interface smartphone** : Double joystick tactile (mouvement + rotation) via navigateur web
-- **Télémétrie temps réel** : Position GPS, accéléromètre, gyroscope, vitesse, cap
-- **Contrôle de vitesse** : Réglable de 30% à 100% depuis l'interface
-- **Navigation autonome** : Patrouille par waypoints GPS avec évitement d'obstacles (LiDAR)
-- **LiDAR RPLidar C1** : Scan 360°, détection d'obstacles, grille d'occupation
-- **Sécurité** : Authentification HTTP Basic Auth (scrypt), TLS/HTTPS optionnel
+- **Mecanum Control**: Omnidirectional movement (forward/backward, strafe, rotation)
+- **Smartphone Interface**: Dual touch joystick (movement + rotation) via web browser
+- **Real-time Telemetry**: GPS position, accelerometer, gyroscope, speed, heading
+- **Speed Control**: Adjustable from 30% to 100% from the interface
+- **Autonomous Navigation**: GPS waypoint patrol with obstacle avoidance (LiDAR)
+- **LiDAR RPLidar C1**: 360° scan, obstacle detection, occupancy grid
+- **Security**: HTTP Basic Auth (scrypt), optional TLS/HTTPS
 
-## Câblage
+## Wiring
 
 ### UART Pi5 ↔ Pico (115200 baud)
 
-| Pi 5 (broche)        | Pico (broche) | Description       |
+| Pi 5 (pin)           | Pico (pin)    | Description       |
 |----------------------|---------------|-------------------|
 | GPIO8 / TXD3 (24)    | GP1 (2)       | Pi5 TX → Pico RX  |
 | GPIO9 / RXD3 (21)    | GP0 (1)       | Pi5 RX ← Pico TX  |
-| GND (20)             | GND (3)       | Masse commune     |
+| GND (20)             | GND (3)       | Common ground      |
 
 ### GPS NEO-6M → Pico (9600 baud)
 
-| NEO-6M | Pico (broche) | Description |
+| NEO-6M | Pico (pin)    | Description |
 |--------|---------------|-------------|
 | TX     | GP5 (7)       | GPS TX → Pico RX (UART1) |
 | RX     | GP4 (6)       | GPS RX ← Pico TX (UART1) |
-| VCC    | 3V3           | Alimentation |
-| GND    | GND           | Masse |
+| VCC    | 3V3           | Power supply |
+| GND    | GND           | Ground |
 
 ### IMU BMI160 → Pico (I2C1, 400 kHz)
 
-| BMI160 | Pico (broche) | Description |
+| BMI160 | Pico (pin)    | Description |
 |--------|---------------|-------------|
 | SDA    | GP14 (19)     | I2C1 Data   |
 | SCL    | GP15 (20)     | I2C1 Clock  |
-| VCC    | 3V3           | Alimentation |
-| GND    | GND           | Masse |
+| VCC    | 3V3           | Power supply |
+| GND    | GND           | Ground |
 
-Adresse I2C : `0x68` (SDO=LOW) ou `0x69` (SDO=HIGH)
+I2C address: `0x68` (SDO=LOW) or `0x69` (SDO=HIGH)
 
-### Moteurs Mecanum (HW-249 / L9110S)
+### Mecanum Motors (HW-249 / L9110S)
 
 ```
-Vue de dessus du robot:
+Top view of the robot:
     FL ──────── FR
     │    ↑     │
-    │  AVANT   │
+    │  FRONT   │
     │          │
     RL ──────── RR
 ```
 
-| Moteur | GPIO IN1 | GPIO IN2 |
+| Motor  | GPIO IN1 | GPIO IN2 |
 |--------|----------|----------|
 | FL     | 17       | 27       |
 | FR     | 22       | 23       |
 | RL     | 24       | 25       |
 | RR     | 5        | 6        |
 
-PWM logiciel 100 Hz via `gpiod`. Alimentation moteurs : 5V.
+Software PWM 100 Hz via `gpiod`. Motor power supply: 5V.
 
 ## Installation
 
 ### Raspberry Pi 5
 
 ```bash
-# Cloner le dépôt
+# Clone the repository
 git clone https://github.com/<user>/autonomous-robot.git ~/AutonomRobot
 
-# Lancer le script d'installation
+# Run the setup script
 cd ~/AutonomRobot
 bash scripts/setup_pi5_env.sh
 ```
 
-Le script configure automatiquement :
-- UART3 dans `/boot/firmware/config.txt` (nécessite un reboot)
-- Environnement virtuel Python (`pi5/venv/`)
-- Dépendances système (`python3-lgpio`, `libgpiod-dev`, etc.)
-- Dépendances Python (`flask`, `pyserial`, `gpiod`, etc.)
-- Permissions GPIO et série (groupes `gpio` et `dialout`)
+The script automatically configures:
+- UART3 in `/boot/firmware/config.txt` (requires reboot)
+- Python virtual environment (`pi5/venv/`)
+- System dependencies (`python3-lgpio`, `libgpiod-dev`, etc.)
+- Python dependencies (`flask`, `pyserial`, `gpiod`, etc.)
+- GPIO and serial permissions (`gpio` and `dialout` groups)
 
 ### Raspberry Pi Pico
 
-Copier le contenu du dossier `pico/` sur le Pico via Thonny ou `mpremote` :
+Copy the `pico/` folder contents to the Pico via Thonny or `mpremote`:
 
 ```bash
 mpremote cp pico/main.py :main.py
 mpremote cp -r pico/lib/ :lib/
 ```
 
-## Utilisation
+## Usage
 
-### Démarrer le robot
+### Start the robot
 
 ```bash
 cd ~/AutonomRobot/pi5
@@ -120,48 +122,48 @@ source venv/bin/activate
 python main.py
 ```
 
-Options :
-- `--no-motors` : Désactiver les moteurs (test capteurs uniquement)
-- `--no-sensors` : Désactiver la réception UART (test moteurs uniquement)
-- `--no-lidar` : Désactiver le LiDAR
-- `--lidar-port /dev/ttyUSB0` : Port série du LiDAR (défaut : `/dev/ttyUSB0`)
-- `--port 8085` : Port du serveur web (défaut : 8085)
-- `--no-auth` : Désactiver l'authentification (dev/debug uniquement)
+Options:
+- `--no-motors`: Disable motors (sensor testing only)
+- `--no-sensors`: Disable UART reception (motor testing only)
+- `--no-lidar`: Disable LiDAR
+- `--lidar-port /dev/ttyUSB0`: LiDAR serial port (default: `/dev/ttyUSB0`)
+- `--port 8085`: Web server port (default: 8085)
+- `--no-auth`: Disable authentication (dev/debug only)
 
-### Contrôle via smartphone
+### Smartphone control
 
-1. Connecter le smartphone au même réseau WiFi que la Pi5
-2. Ouvrir `https://<ip-pi5>:8085` dans le navigateur (accepter le certificat auto-signé)
-3. Se connecter avec les identifiants configurés dans `config/robot_config.yaml`
-4. Utiliser le joystick gauche pour le déplacement, le droit pour la rotation
-5. Régler la vitesse avec les boutons +/- (30-100%)
+1. Connect your smartphone to the same WiFi network as the Pi5
+2. Open `https://<pi5-ip>:8085` in your browser (accept the self-signed certificate)
+3. Log in with the credentials configured in `config/secrets.yaml`
+4. Use the left joystick for movement, the right one for rotation
+5. Adjust speed with +/- buttons (30-100%)
 
-## Sécurité
+## Security
 
-Les secrets (auth, TLS) sont dans `config/secrets.yaml` (ignoré par git). Pour configurer :
+Secrets (auth, TLS) are stored in `config/secrets.yaml` (git-ignored). To configure:
 
 ```bash
 cp config/secrets.yaml.example config/secrets.yaml
-# Editer secrets.yaml avec vos identifiants
+# Edit secrets.yaml with your credentials
 ```
 
-### Authentification
+### Authentication
 
-L'interface web est protégée par HTTP Basic Auth. Les identifiants (`username` et `password_hash`) sont configurés dans `config/secrets.yaml`.
+The web interface is protected by HTTP Basic Auth. Credentials (`username` and `password_hash`) are configured in `config/secrets.yaml`.
 
-Pour générer un hash de mot de passe :
+To generate a password hash:
 
 ```bash
-python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MON_MOT_DE_PASSE'))"
+python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MY_PASSWORD'))"
 ```
 
-Pour désactiver l'authentification (dev uniquement) : `python main.py --no-auth`
+To disable authentication (dev only): `python main.py --no-auth`
 
 ### TLS / HTTPS
 
-Le serveur supporte HTTPS via un certificat auto-signé. Les fichiers de certificat sont stockés dans `config/ssl/` (ignoré par git).
+The server supports HTTPS via a self-signed certificate. Certificate files are stored in `config/ssl/` (git-ignored).
 
-**Générer le certificat sur la Pi5 :**
+**Generate the certificate on the Pi5:**
 
 ```bash
 mkdir -p ~/AutonomRobot/config/ssl
@@ -172,7 +174,7 @@ openssl req -x509 -newkey rsa:2048 \
   -subj '/CN=robot-mecanum'
 ```
 
-La configuration TLS dans `config/secrets.yaml` :
+TLS configuration in `config/secrets.yaml`:
 
 ```yaml
 tls:
@@ -180,104 +182,104 @@ tls:
   key: config/ssl/key.pem
 ```
 
-Si les fichiers de certificat n'existent pas, le serveur démarre automatiquement en HTTP.
+If certificate files don't exist, the server automatically starts in HTTP mode.
 
-## Structure du projet
+## Project Structure
 
 ```
 autonomous-robot/
 ├── config/
-│   ├── robot_config.yaml          # Configuration GPIO, UART, moteurs, LiDAR, nav
-│   ├── secrets.yaml               # Auth + TLS (ignoré par git)
-│   ├── secrets.yaml.example       # Template pour secrets.yaml
-│   ├── patrol_route.json          # Waypoints de patrouille (créé automatiquement)
-│   ├── sensor_calibration.json    # Offsets calibration IMU et GPS
-│   └── ssl/                       # Certificats TLS (ignoré par git)
+│   ├── robot_config.yaml          # GPIO, UART, motors, LiDAR, navigation config
+│   ├── secrets.yaml               # Auth + TLS (git-ignored)
+│   ├── secrets.yaml.example       # Template for secrets.yaml
+│   ├── patrol_route.json          # Patrol waypoints (auto-created)
+│   ├── sensor_calibration.json    # IMU and GPS calibration offsets
+│   └── ssl/                       # TLS certificates (git-ignored)
 │       ├── cert.pem
 │       └── key.pem
-├── pico/                          # Code MicroPython (Pico)
-│   ├── main.py                    # Application capteurs principale
+├── pico/                          # MicroPython code (Pico)
+│   ├── main.py                    # Main sensor application
 │   └── lib/
-│       ├── bmi160_raw.py          # Driver IMU BMI160
-│       ├── gps_reader.py          # Lecteur GPS NEO-6M
-│       ├── micropyGPS.py          # Parser NMEA (lib externe)
-│       └── protocole.py           # Encodage/décodage trames UART
-├── pi5/                           # Code Python (Pi5)
-│   ├── main.py                    # Application principale
-│   ├── requirements.txt           # Dépendances Python
+│       ├── bmi160_raw.py          # BMI160 IMU driver
+│       ├── gps_reader.py          # NEO-6M GPS reader
+│       ├── micropyGPS.py          # NMEA parser (external lib)
+│       └── protocole.py           # UART frame encoding/decoding
+├── pi5/                           # Python code (Pi5)
+│   ├── main.py                    # Main application
+│   ├── requirements.txt           # Python dependencies
 │   ├── motors/
-│   │   └── motor_controller.py    # Contrôleur Mecanum (gpiod + PWM)
+│   │   └── motor_controller.py    # Mecanum controller (gpiod + PWM)
 │   ├── sensors/
-│   │   └── uart_receiver.py       # Réception et décodage trames UART
-│   ├── lidar/                     # RPLidar C1 (scans + détection)
-│   │   ├── scanner.py             # Acquisition scans 360°
-│   │   ├── data.py                # Modèles ScanPoint, Scan
-│   │   └── detection/             # DBSCAN, tracking, grille occupation
-│   ├── navigation/                # Navigation autonome
-│   │   ├── patrol_manager.py      # Gestion waypoints GPS
-│   │   ├── obstacle_avoider.py    # Évitement obstacles lidar
-│   │   └── pilot.py               # Pilote autonome (GPS + lidar)
+│   │   └── uart_receiver.py       # UART frame reception and decoding
+│   ├── lidar/                     # RPLidar C1 (scans + detection)
+│   │   ├── scanner.py             # 360° scan acquisition
+│   │   ├── data.py                # ScanPoint, Scan models
+│   │   └── detection/             # DBSCAN, tracking, occupancy grid
+│   ├── navigation/                # Autonomous navigation
+│   │   ├── patrol_manager.py      # GPS waypoint management
+│   │   ├── obstacle_avoider.py    # LiDAR obstacle avoidance
+│   │   └── pilot.py               # Autonomous pilot (GPS + LiDAR)
 │   ├── telemetry/
-│   │   └── web_server.py          # Serveur Flask + joystick + lidar + patrouille
-│   └── tests/                     # Tests unitaires
+│   │   └── web_server.py          # Flask server + joystick + LiDAR + patrol
+│   └── tests/                     # Unit tests
 └── scripts/
-    └── setup_pi5_env.sh           # Script d'installation Pi5
+    └── setup_pi5_env.sh           # Pi5 setup script
 ```
 
-## Protocole UART
+## UART Protocol
 
-Trames de 34 bytes avec encapsulation STX/ETX et CRC-8 :
+34-byte frames with STX/ETX encapsulation and CRC-8:
 
 ```
-Octet  0     : STX (0x02)
-Octet  1     : LEN (30 = longueur payload)
-Octets 2-31  : PAYLOAD (30 bytes)
-  2-3        : Séquence          (uint16, 0-65535)
-  4-5        : Accéléromètre X   (int16, en mg)
-  6-7        : Accéléromètre Y   (int16, en mg)
-  8-9        : Accéléromètre Z   (int16, en mg)
-  10-11      : Gyroscope X       (int16, en 0.1°/s)
-  12-13      : Gyroscope Y       (int16, en 0.1°/s)
-  14-15      : Gyroscope Z       (int16, en 0.1°/s)
-  16-19      : Latitude          (int32, en microdegrés)
-  20-23      : Longitude         (int32, en microdegrés)
-  24-25      : Altitude          (int16, en décimètres)
-  26-27      : Vitesse           (uint16, en cm/s)
-  28-29      : Cap               (uint16, en 0.01°)
-  30         : Satellites        (uint8, nombre de satellites)
-  31         : Fix qualité       (uint8, 0=no fix, 1=GPS, 2=DGPS)
-Octet  32    : CRC-8 (polynôme 0x07, sur le payload)
-Octet  33    : ETX (0x03)
+Byte   0     : STX (0x02)
+Byte   1     : LEN (30 = payload length)
+Bytes  2-31  : PAYLOAD (30 bytes)
+  2-3        : Sequence          (uint16, 0-65535)
+  4-5        : Accelerometer X   (int16, in mg)
+  6-7        : Accelerometer Y   (int16, in mg)
+  8-9        : Accelerometer Z   (int16, in mg)
+  10-11      : Gyroscope X       (int16, in 0.1°/s)
+  12-13      : Gyroscope Y       (int16, in 0.1°/s)
+  14-15      : Gyroscope Z       (int16, in 0.1°/s)
+  16-19      : Latitude          (int32, in microdegrees)
+  20-23      : Longitude         (int32, in microdegrees)
+  24-25      : Altitude          (int16, in decimeters)
+  26-27      : Speed             (uint16, in cm/s)
+  28-29      : Heading           (uint16, in 0.01°)
+  30         : Satellites        (uint8, satellite count)
+  31         : Fix quality       (uint8, 0=no fix, 1=GPS, 2=DGPS)
+Byte   32    : CRC-8 (polynomial 0x07, over payload)
+Byte   33    : ETX (0x03)
 ```
 
-Fréquence de transmission : **10 Hz** (100 ms).
+Transmission rate: **10 Hz** (100 ms).
 
-## API Web
+## Web API
 
-Le serveur Flask expose les endpoints suivants :
+The Flask server exposes the following endpoints:
 
-| Méthode | Endpoint              | Description                          |
+| Method  | Endpoint              | Description                          |
 |---------|-----------------------|--------------------------------------|
-| POST    | `/api/move`           | Commande de mouvement                |
-| GET     | `/api/sensors`        | Dernières données capteurs           |
-| GET     | `/api/status`         | État des composants                  |
-| POST    | `/api/stop`           | Arrêt d'urgence des moteurs         |
-| GET     | `/api/lidar`          | Derniers points du scan LiDAR        |
-| GET     | `/api/waypoints`      | Liste des waypoints + index courant  |
-| POST    | `/api/waypoints/record` | Enregistre la position GPS actuelle |
-| DELETE  | `/api/waypoints/<idx>` | Supprime un waypoint                |
-| POST    | `/api/patrol/start`   | Lance la patrouille autonome         |
-| POST    | `/api/patrol/stop`    | Arrête la patrouille                 |
-| GET     | `/api/patrol/status`  | État de la patrouille                |
+| POST    | `/api/move`           | Movement command                     |
+| GET     | `/api/sensors`        | Latest sensor data                   |
+| GET     | `/api/status`         | Component status                     |
+| POST    | `/api/stop`           | Emergency motor stop                 |
+| GET     | `/api/lidar`          | Latest LiDAR scan points             |
+| GET     | `/api/waypoints`      | Waypoint list + current index        |
+| POST    | `/api/waypoints/record` | Record current GPS position        |
+| DELETE  | `/api/waypoints/<idx>` | Delete a waypoint                   |
+| POST    | `/api/patrol/start`   | Start autonomous patrol              |
+| POST    | `/api/patrol/stop`    | Stop patrol                          |
+| GET     | `/api/patrol/status`  | Patrol status                        |
 
 ### POST `/api/move`
 
 ```json
 {
-  "vx": -1.0,       // Vélocité latérale (-1 à 1)
-  "vy": 0.5,        // Vélocité longitudinale (-1 à 1)
-  "omega": 0.0,     // Rotation (-1 à 1)
-  "speed": 70       // Vitesse max en % (0-100)
+  "vx": -1.0,       // Lateral velocity (-1 to 1)
+  "vy": 0.5,        // Longitudinal velocity (-1 to 1)
+  "omega": 0.0,     // Rotation (-1 to 1)
+  "speed": 70       // Max speed in % (0-100)
 }
 ```
 
@@ -295,7 +297,7 @@ Le serveur Flask expose les endpoints suivants :
 }
 ```
 
-## Cinématique Mecanum
+## Mecanum Kinematics
 
 ```
 FL = vy + vx + omega
@@ -304,19 +306,22 @@ RL = vy - vx + omega
 RR = vy + vx - omega
 ```
 
-Les vitesses sont normalisées par la valeur maximale pour éviter la saturation.
+Speeds are normalized by the maximum value to prevent saturation.
 
 ## TODO
 
-- [x] Valider câblage moteurs et sens de rotation
-- [x] Tester interface joystick sur smartphone
-- [x] Calibrer IMU BMI160 au repos
-- [x] Valider réception GPS en extérieur (premier fix)
-- [x] Écrire tests unitaires (`pi5/tests/`)
-- [x] Intégrer navigation autonome par waypoints GPS
-- [x] Ajouter détection d'obstacles (RPLidar C1)
-- [x] Sécuriser l'interface web (auth + TLS)
+- [x] Validate motor wiring and rotation direction
+- [x] Test smartphone joystick interface
+- [x] Calibrate BMI160 IMU at rest
+- [x] Validate outdoor GPS reception (first fix)
+- [x] Write unit tests (`pi5/tests/`)
+- [x] Integrate autonomous GPS waypoint navigation
+- [x] Add obstacle detection (RPLidar C1)
+- [x] Secure web interface (auth + TLS)
+- [ ] Test autonomous patrol (GPS waypoint following, stop, mode switching)
+- [ ] Integrate Raspberry Pi AI Camera (intelligent obstacle/person/animal detection)
+- [ ] Push notifications + siren on intrusion detection
 
-## Licence
+## License
 
-Projet personnel - Tous droits réservés
+Non-commercial use only. See [LICENSE](LICENSE) for details.

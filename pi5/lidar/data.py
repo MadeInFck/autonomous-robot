@@ -1,4 +1,4 @@
-"""Modeles de donnees pour les scans LiDAR."""
+"""Data models for LiDAR scans."""
 
 import math
 import time
@@ -10,25 +10,25 @@ import numpy as np
 
 @dataclass
 class ScanPoint:
-    """Un point de mesure LiDAR."""
+    """A single LiDAR measurement point."""
 
-    angle_deg: float       # Angle en degres (0-360)
-    distance_mm: float     # Distance en millimetres
-    quality: int           # Qualite du signal (0-63)
+    angle_deg: float       # Angle in degrees (0-360)
+    distance_mm: float     # Distance in millimeters
+    quality: int           # Signal quality (0-63)
 
     @property
     def x_mm(self) -> float:
-        """Coordonnee X en mm. Convention robot : 0deg = avant = +Y, 90deg = droite = +X."""
+        """X coordinate in mm. Robot convention: 0deg = forward = +Y, 90deg = right = +X."""
         return self.distance_mm * math.sin(math.radians(self.angle_deg))
 
     @property
     def y_mm(self) -> float:
-        """Coordonnee Y en mm. Convention robot : 0deg = avant = +Y."""
+        """Y coordinate in mm. Robot convention: 0deg = forward = +Y."""
         return self.distance_mm * math.cos(math.radians(self.angle_deg))
 
     @property
     def is_valid(self) -> bool:
-        """True si le point a une distance et qualite non nulles."""
+        """True if the point has non-zero distance and quality."""
         return self.distance_mm > 0 and self.quality > 0
 
     def to_dict(self) -> dict:
@@ -48,9 +48,9 @@ class ScanPoint:
 
     @classmethod
     def from_sdk_dict(cls, d: dict) -> Optional["ScanPoint"]:
-        """Cree un ScanPoint depuis le format SDK rplidarc1.
+        """Creates a ScanPoint from the rplidarc1 SDK format.
 
-        Le SDK retourne : {"q": int, "a_deg": float, "d_mm": float|None}
+        The SDK returns: {"q": int, "a_deg": float, "d_mm": float|None}
         """
         distance = d.get("d_mm")
         if distance is None:
@@ -64,14 +64,14 @@ class ScanPoint:
 
 @dataclass
 class Scan:
-    """Un scan complet (un tour 360deg du LiDAR)."""
+    """A complete scan (one 360deg revolution of the LiDAR)."""
 
     points: list[ScanPoint] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
 
     @property
     def valid_points(self) -> list[ScanPoint]:
-        """Points avec distance et qualite valides."""
+        """Points with valid distance and quality."""
         return [p for p in self.points if p.is_valid]
 
     @property
@@ -90,16 +90,16 @@ class Scan:
         return sum(p.quality for p in valid) / len(valid)
 
     def filter_by_quality(self, min_quality: int = 1) -> "Scan":
-        """Retourne un nouveau Scan avec uniquement les points au-dessus du seuil."""
+        """Returns a new Scan with only the points above the quality threshold."""
         return Scan(
             points=[p for p in self.points if p.quality >= min_quality],
             timestamp=self.timestamp,
         )
 
     def to_cartesian_arrays(self, min_quality: int = 1) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Retourne (x_mm, y_mm, qualities) en arrays numpy.
+        """Returns (x_mm, y_mm, qualities) as numpy arrays.
 
-        Ne retourne que les points valides au-dessus du seuil de qualite.
+        Only returns valid points above the quality threshold.
         """
         pts = [p for p in self.points if p.is_valid and p.quality >= min_quality]
         if not pts:

@@ -1,24 +1,24 @@
 """
-Contrôleur de moteurs Mecanum pour Raspberry Pi 5
-Carte driver: HW-249 avec L9110S (alimentation 5V)
+Mecanum motor controller for Raspberry Pi 5
+Driver board: HW-249 with L9110S (5V power supply)
 
-Configuration roues Mecanum (vue de dessus):
+Mecanum wheel configuration (top view):
     FL ──────── FR
     │    ↑     │
-    │  AVANT   │
+    │  FRONT   │
     │          │
     RL ──────── RR
 
-Chaque moteur a 2 pins:
-- IA: marche avant
-- IB: marche arrière
+Each motor has 2 pins:
+- IA: forward
+- IB: reverse
 """
 
 import time
 import threading
 from dataclasses import dataclass
 
-# Import gpiod pour Pi5
+# Import gpiod for Pi5
 try:
     import gpiod
     from gpiod.line import Direction, Value
@@ -30,12 +30,12 @@ except ImportError:
 
 @dataclass
 class MotorPins:
-    """Configuration des pins pour un moteur"""
-    ia: int  # Pin avant
-    ib: int  # Pin arrière
+    """Pin configuration for a motor"""
+    ia: int  # Forward pin
+    ib: int  # Reverse pin
 
 
-# Configuration GPIO par défaut pour HW-249/L9110S
+# Default GPIO configuration for HW-249/L9110S
 DEFAULT_MOTOR_CONFIG = {
     'FL': MotorPins(ia=17, ib=27),   # Front Left  - GPIO17, GPIO27
     'FR': MotorPins(ia=22, ib=23),   # Front Right - GPIO22, GPIO23
@@ -48,10 +48,10 @@ CHIP = "/dev/gpiochip0"
 
 class MecanumController:
     """
-    Contrôleur pour robot à roues Mecanum avec gpiod
+    Controller for Mecanum wheeled robot using gpiod
 
-    Note: Cette version utilise ON/OFF simple.
-    Pour le contrôle de vitesse, on utilise un duty cycle software.
+    Note: This version uses simple ON/OFF.
+    For speed control, a software duty cycle is used.
     """
 
     def __init__(self, motor_config: dict = None):
@@ -59,11 +59,11 @@ class MecanumController:
         self.request = None
         self._lock = threading.Lock()
 
-        # État courant des moteurs
+        # Current motor state
         self._motor_speeds = {'FL': 0, 'FR': 0, 'RL': 0, 'RR': 0}
         self._motor_directions = {'FL': True, 'FR': True, 'RL': True, 'RR': True}
 
-        # PWM software
+        # Software PWM
         self._pwm_thread = None
         self._pwm_running = False
         self._pwm_states = {}  # {motor: {'speed': 0-100, 'forward': True}}
@@ -71,13 +71,13 @@ class MecanumController:
         self._init_gpio()
 
     def _init_gpio(self):
-        """Initialise les pins GPIO avec gpiod"""
+        """Initializes GPIO pins with gpiod"""
         if not HAS_GPIO:
             print("Mode simulation - pas de GPIO")
             return
 
         try:
-            # Collecter tous les pins
+            # Collect all pins
             gpio_config = {}
             for name, pins in self.config.items():
                 gpio_config[pins.ia] = gpiod.LineSettings(
@@ -101,7 +101,7 @@ class MecanumController:
             print(f"  RL: GPIO{self.config['RL'].ia}/{self.config['RL'].ib}")
             print(f"  RR: GPIO{self.config['RR'].ia}/{self.config['RR'].ib}")
 
-            # Démarrer le thread PWM software
+            # Start the software PWM thread
             self._start_pwm_thread()
 
         except Exception as e:
@@ -109,13 +109,13 @@ class MecanumController:
             self.request = None
 
     def _start_pwm_thread(self):
-        """Démarre le thread de PWM software"""
+        """Starts the software PWM thread"""
         self._pwm_running = True
         self._pwm_thread = threading.Thread(target=self._pwm_loop, daemon=True)
         self._pwm_thread.start()
 
     def _pwm_loop(self):
-        """Boucle PWM software - 100 Hz"""
+        """Software PWM loop - 100 Hz"""
         period = 0.01  # 10ms = 100 Hz
         step = 0.001   # 1ms steps (100 steps per period = 0-100%)
 
@@ -134,7 +134,7 @@ class MecanumController:
                             continue
 
                         if speed == 0:
-                            # Arrêt
+                            # Stop
                             self.request.set_value(pins.ia, Value.INACTIVE)
                             self.request.set_value(pins.ib, Value.INACTIVE)
                         elif i < speed:
@@ -146,7 +146,7 @@ class MecanumController:
                                 self.request.set_value(pins.ia, Value.INACTIVE)
                                 self.request.set_value(pins.ib, Value.ACTIVE)
                         else:
-                            # OFF phase (pour PWM)
+                            # OFF phase (for PWM)
                             self.request.set_value(pins.ia, Value.INACTIVE)
                             self.request.set_value(pins.ib, Value.INACTIVE)
 
@@ -154,12 +154,12 @@ class MecanumController:
 
     def _set_motor(self, motor: str, speed: int, forward: bool):
         """
-        Définit la vitesse et direction d'un moteur
+        Sets the speed and direction of a motor
 
         Args:
-            motor: Nom du moteur (FL, FR, RL, RR)
-            speed: Vitesse 0-100 (%)
-            forward: True = avant, False = arrière
+            motor: Motor name (FL, FR, RL, RR)
+            speed: Speed 0-100 (%)
+            forward: True = forward, False = reverse
         """
         if motor not in self.config:
             return
@@ -171,39 +171,39 @@ class MecanumController:
             self._motor_directions[motor] = forward
 
     def stop(self):
-        """Arrête tous les moteurs immédiatement"""
+        """Stops all motors immediately"""
         for motor in ['FL', 'FR', 'RL', 'RR']:
             self._set_motor(motor, 0, True)
 
     def move(self, vx: float, vy: float, omega: float, speed: int = 100):
         """
-        Mouvement omnidirectionnel avec joystick
+        Omnidirectional movement with joystick
 
         Args:
-            vx: Vitesse latérale (-1 à 1) - gauche/droite
-            vy: Vitesse longitudinale (-1 à 1) - avant/arrière
-            omega: Rotation (-1 à 1) - rotation gauche/droite
-            speed: Vitesse max (0-100%)
+            vx: Lateral velocity (-1 to 1) - left/right
+            vy: Longitudinal velocity (-1 to 1) - forward/backward
+            omega: Rotation (-1 to 1) - rotate left/right
+            speed: Max speed (0-100%)
         """
         # Clamp inputs
         vx = max(-1, min(1, vx))
         vy = max(-1, min(1, vy))
         omega = max(-1, min(1, omega))
 
-        # Calcul vitesses Mecanum
+        # Calculate Mecanum wheel speeds
         fl = vy + vx + omega
         fr = vy - vx - omega
         rl = vy - vx + omega
         rr = vy + vx - omega
 
-        # Normaliser si > 1
+        # Normalize if > 1
         max_val = max(abs(fl), abs(fr), abs(rl), abs(rr), 1)
         fl /= max_val
         fr /= max_val
         rl /= max_val
         rr /= max_val
 
-        # Appliquer vitesse et direction
+        # Apply speed and direction
         self._set_motor('FL', int(abs(fl) * speed), fl >= 0)
         self._set_motor('FR', int(abs(fr) * speed), fr >= 0)
         self._set_motor('RL', int(abs(rl) * speed), rl >= 0)
@@ -228,7 +228,7 @@ class MecanumController:
         self.move(0, 0, 1, speed)
 
     def get_status(self) -> dict:
-        """Retourne l'état courant des moteurs"""
+        """Returns the current motor state"""
         with self._lock:
             return {
                 'FL': {'speed': self._motor_speeds['FL'], 'forward': self._motor_directions['FL']},
@@ -238,7 +238,7 @@ class MecanumController:
             }
 
     def close(self):
-        """Libère les ressources GPIO"""
+        """Releases GPIO resources"""
         self._pwm_running = False
         if self._pwm_thread:
             self._pwm_thread.join(timeout=1)
@@ -253,7 +253,7 @@ class MecanumController:
             self.request = None
 
 
-# Test du module
+# Module test
 if __name__ == "__main__":
     print("=" * 50)
     print("  Test Contrôleur Mecanum (gpiod)")

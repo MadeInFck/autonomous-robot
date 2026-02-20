@@ -1,11 +1,11 @@
 #!/bin/bash
-# Script d'installation pour Raspberry Pi 5
-# Robot Mecanum Autonome
-# Déploiement dans ~/AutonomRobot
+# Installation script for Raspberry Pi 5
+# Autonomous Mecanum Robot
+# Deployment in ~/AutonomRobot
 
 set -e
 
-# Dossier d'installation
+# Installation directory
 INSTALL_DIR="$HOME/AutonomRobot"
 
 echo "=================================="
@@ -13,12 +13,12 @@ echo "  Setup Robot Mecanum - Pi 5"
 echo "  Dossier: $INSTALL_DIR"
 echo "=================================="
 
-# Vérifier qu'on est sur une Pi
+# Check that we are on a Pi
 if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
     echo "ATTENTION: Ce script est conçu pour Raspberry Pi"
 fi
 
-# 1. Activer UART3
+# 1. Enable UART3
 echo ""
 echo "[1/5] Configuration UART3..."
 CONFIG_FILE="/boot/firmware/config.txt"
@@ -34,7 +34,7 @@ else
     echo "  ATTENTION: $CONFIG_FILE non trouvé"
 fi
 
-# 2. Installer les dépendances système
+# 2. Install system dependencies
 echo ""
 echo "[2/5] Installation des dépendances système..."
 sudo apt-get update
@@ -44,11 +44,11 @@ sudo apt-get install -y \
     python3-lgpio \
     libgpiod-dev
 
-# 3. Créer l'environnement virtuel
+# 3. Create the virtual environment
 echo ""
 echo "[3/5] Création de l'environnement virtuel..."
 
-# Se placer dans le dossier pi5
+# Navigate to the pi5 directory
 PI5_DIR="$INSTALL_DIR/pi5"
 if [ ! -d "$PI5_DIR" ]; then
     echo "  ERREUR: Dossier $PI5_DIR non trouvé"
@@ -65,14 +65,14 @@ else
     echo "  Environnement virtuel existant"
 fi
 
-# 4. Installer les dépendances Python
+# 4. Install Python dependencies
 echo ""
 echo "[4/5] Installation des dépendances Python..."
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 5. Permissions série
+# 5. Serial permissions
 echo ""
 echo "[5/5] Configuration des permissions..."
 sudo usermod -a -G dialout $USER

@@ -1,4 +1,4 @@
-"""Grille d'occupation log-odds avec ray-tracing Bresenham."""
+"""Log-odds occupancy grid with Bresenham ray-tracing."""
 
 import numpy as np
 
@@ -6,13 +6,13 @@ from lidar.data import Scan
 
 
 class OccupancyGrid:
-    """Grille d'occupation probabiliste mise a jour par log-odds.
+    """Probabilistic occupancy grid updated via log-odds.
 
-    La grille est centree : l'origine du monde (0, 0) correspond au centre
-    de la grille. Chaque cellule stocke un log-odds ratio, mis a jour par
-    ray-tracing Bresenham pour chaque mesure LiDAR.
+    The grid is centered: the world origin (0, 0) corresponds to the center
+    of the grid. Each cell stores a log-odds ratio, updated by Bresenham
+    ray-tracing for each LiDAR measurement.
 
-    Taille par defaut : 200x200 cellules a 50mm/cellule = 10m x 10m.
+    Default size: 200x200 cells at 50mm/cell = 10m x 10m.
     """
 
     def __init__(
@@ -35,13 +35,13 @@ class OccupancyGrid:
         self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.float64)
 
     def world_to_grid(self, x_mm: float, y_mm: float) -> tuple[int, int]:
-        """Convertit des coordonnees monde (mm) en indices de grille (row, col)."""
+        """Converts world coordinates (mm) to grid indices (row, col)."""
         col = int(x_mm / self.resolution_mm + self.grid_size / 2)
         row = int(-y_mm / self.resolution_mm + self.grid_size / 2)
         return row, col
 
     def grid_to_world(self, row: int, col: int) -> tuple[float, float]:
-        """Convertit des indices de grille en coordonnees monde (mm)."""
+        """Converts grid indices to world coordinates (mm)."""
         x_mm = (col - self.grid_size / 2) * self.resolution_mm
         y_mm = -(row - self.grid_size / 2) * self.resolution_mm
         return x_mm, y_mm
@@ -56,7 +56,7 @@ class OccupancyGrid:
         origin_x_mm: float = 0.0,
         origin_y_mm: float = 0.0,
     ):
-        """Met a jour la grille avec un scan LiDAR."""
+        """Updates the grid with a LiDAR scan."""
         x, y, _ = scan.to_cartesian_arrays(min_quality=min_quality)
 
         if len(x) == 0:
@@ -90,7 +90,7 @@ class OccupancyGrid:
 
     @staticmethod
     def _bresenham(r0: int, c0: int, r1: int, c1: int) -> list[tuple[int, int]]:
-        """Algorithme de Bresenham pour tracer une ligne entre deux cellules."""
+        """Bresenham's algorithm to trace a line between two cells."""
         cells = []
         dr = abs(r1 - r0)
         dc = abs(c1 - c0)
@@ -114,15 +114,15 @@ class OccupancyGrid:
         return cells
 
     def to_probability(self) -> np.ndarray:
-        """Convertit la grille log-odds en probabilites [0, 1]."""
+        """Converts the log-odds grid to probabilities [0, 1]."""
         return 1.0 / (1.0 + np.exp(-self.grid))
 
     def to_image_array(self) -> np.ndarray:
-        """Convertit la grille en image uint8 : noir=occupe, blanc=libre, gris=inconnu."""
+        """Converts the grid to a uint8 image: black=occupied, white=free, gray=unknown."""
         prob = self.to_probability()
         img = ((1.0 - prob) * 255).astype(np.uint8)
         return img
 
     def reset(self):
-        """Remet la grille a zero."""
+        """Resets the grid to zero."""
         self.grid[:] = 0.0

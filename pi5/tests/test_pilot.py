@@ -1,4 +1,4 @@
-"""Tests du pilote autonome (transitions d'etats)."""
+"""Tests for the autonomous pilot (state transitions)."""
 
 import sys
 import os
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Mock gpiod et rplidarc1 avant import
+# Mock gpiod and rplidarc1 before import
 import unittest.mock
 sys.modules['gpiod'] = unittest.mock.MagicMock()
 sys.modules['gpiod.line'] = unittest.mock.MagicMock()
@@ -38,11 +38,11 @@ def make_sensor_data(lat=48.8566, lon=2.3522, heading=0, has_fix=True):
 def mock_components():
     motors = MagicMock()
     sensors = MagicMock()
-    lidar = None  # Pas de lidar pour simplifier
+    lidar = None  # No lidar to simplify
 
     pm = PatrolManager(waypoint_radius=3.0)
-    pm.record_waypoint(48.8570, 2.3522, "WP0")  # ~44m au nord
-    pm.record_waypoint(48.8575, 2.3522, "WP1")  # ~100m au nord
+    pm.record_waypoint(48.8570, 2.3522, "WP0")  # ~44m north
+    pm.record_waypoint(48.8575, 2.3522, "WP1")  # ~100m north
 
     return motors, sensors, lidar, pm
 
@@ -82,7 +82,7 @@ class TestPilotStates:
 
     def test_no_waypoints_no_start(self, mock_components):
         motors, sensors, lidar, _ = mock_components
-        pm = PatrolManager()  # Vide
+        pm = PatrolManager()  # Empty
         pilot = AutonomousPilot(motors, sensors, lidar, pm)
         pilot.start()
         assert pilot.state == PilotState.IDLE

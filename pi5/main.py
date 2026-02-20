@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Application principale Raspberry Pi 5
-Robot Autonome Mecanum - Controle via smartphone + patrouille autonome
+Main application for Raspberry Pi 5
+Autonomous Mecanum Robot - Smartphone control + autonomous patrol
 
-Deploiement: ~/AutonomRobot/pi5/
+Deployment: ~/AutonomRobot/pi5/
 """
 
 import os
@@ -12,14 +12,14 @@ import time
 import signal
 import argparse
 
-# Chemin relatif pour les imports locaux
+# Relative path for local imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sensors.uart_receiver import UARTReceiver, SensorData
 from motors.motor_controller import MecanumController
 from telemetry.web_server import WebServer
 from navigation.patrol_manager import PatrolManager
 
-# Configuration par defaut
+# Default configuration
 UART_PORT = '/dev/ttyAMA3'
 UART_BAUDRATE = 115200
 LIDAR_PORT = '/dev/ttyUSB0'
@@ -30,7 +30,7 @@ PATROL_FILE = os.path.join(PROJECT_ROOT, 'config', 'patrol_route.json')
 
 
 class RobotApp:
-    """Application principale du robot"""
+    """Main robot application"""
 
     def __init__(self, enable_motors=True, enable_sensors=True,
                  enable_lidar=True, lidar_port=LIDAR_PORT,
@@ -49,7 +49,7 @@ class RobotApp:
         print("  ROBOT MECANUM - Pi 5 Controller")
         print("=" * 50)
 
-        # Initialiser les moteurs
+        # Initialize motors
         if enable_motors:
             print("\n[Motors] Initialisation...")
             try:
@@ -58,7 +58,7 @@ class RobotApp:
             except Exception as e:
                 print(f"[Motors] Erreur: {e}")
 
-        # Initialiser le recepteur UART
+        # Initialize the UART receiver
         if enable_sensors:
             print(f"\n[UART] Initialisation {UART_PORT}...")
             try:
@@ -76,7 +76,7 @@ class RobotApp:
                 print(f"[UART] Erreur: {e}")
                 self.sensor_receiver = None
 
-        # Initialiser le LiDAR
+        # Initialize the LiDAR
         if enable_lidar:
             print(f"\n[LiDAR] Initialisation {lidar_port}...")
             try:
@@ -92,7 +92,7 @@ class RobotApp:
                 print(f"[LiDAR] Erreur: {e}")
                 self.lidar_scanner = None
 
-        # Initialiser le gestionnaire de patrouille
+        # Initialize the patrol manager
         print("\n[Patrol] Initialisation...")
         self.patrol_manager = PatrolManager(waypoint_radius=3.0)
         if os.path.exists(PATROL_FILE):
@@ -103,7 +103,7 @@ class RobotApp:
         else:
             print("[Patrol] Aucun parcours sauvegarde")
 
-        # Initialiser le pilote autonome
+        # Initialize the autonomous pilot
         if self.motor_controller and self.sensor_receiver:
             try:
                 from navigation.pilot import AutonomousPilot
@@ -120,7 +120,7 @@ class RobotApp:
             except Exception as e:
                 print(f"[Pilot] Erreur: {e}")
 
-        # Initialiser le serveur web
+        # Initialize the web server
         print(f"\n[Web] Initialisation serveur sur port {web_port}...")
         self.web_server = WebServer(
             motor_controller=self.motor_controller,
@@ -141,14 +141,14 @@ class RobotApp:
             print("[Web] TLS actif")
 
     def _on_sensor_data(self, data: SensorData):
-        """Callback pour donnees capteurs recues"""
+        """Callback for received sensor data"""
         pass
 
     def run(self):
-        """Lance l'application"""
+        """Starts the application"""
         self._running = True
 
-        # Demarrer le serveur web
+        # Start the web server
         if self.web_server:
             url = self.web_server.start(threaded=True)
         else:
@@ -162,7 +162,7 @@ class RobotApp:
 
         try:
             while self._running:
-                # Traiter les points lidar entrants
+                # Process incoming lidar points
                 if self.lidar_scanner:
                     self.lidar_scanner.process_incoming()
                 self._print_status()
@@ -173,7 +173,7 @@ class RobotApp:
         self.shutdown()
 
     def _print_status(self):
-        """Affiche le status periodique"""
+        """Displays periodic status"""
         status_parts = []
 
         if self.sensor_receiver:
@@ -201,7 +201,7 @@ class RobotApp:
             print(f"[Status] {' | '.join(status_parts)}")
 
     def shutdown(self):
-        """Arrete proprement l'application"""
+        """Gracefully shuts down the application"""
         self._running = False
         print("\nArret des composants...")
 
@@ -230,7 +230,7 @@ class RobotApp:
 
 
 def load_web_config():
-    """Charge la config auth + TLS depuis secrets.yaml"""
+    """Loads auth + TLS config from secrets.yaml"""
     secrets_path = os.path.join(PROJECT_ROOT, 'config', 'secrets.yaml')
     try:
         import yaml

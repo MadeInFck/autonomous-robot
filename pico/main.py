@@ -1,24 +1,24 @@
 """
-Application principale Raspberry Pi Pico
-Robot Autonome - Lecture capteurs et transmission UART vers Pi5
+Raspberry Pi Pico main application
+Autonomous Robot - Sensor reading and UART transmission to Pi5
 
 Hardware:
-- GPS NEO-6M sur UART1 (TX=GP4, RX=GP5) @ 9600 baud
-- Communication Pi5 sur UART0 (TX=GP0, RX=GP1) @ 115200 baud
-- BMI160 IMU sur I2C1 (SDA=GP14, SCL=GP15) @ 400kHz
+- GPS NEO-6M on UART1 (TX=GP4, RX=GP5) @ 9600 baud
+- Pi5 communication on UART0 (TX=GP0, RX=GP1) @ 115200 baud
+- BMI160 IMU on I2C1 (SDA=GP14, SCL=GP15) @ 400kHz
 
-Protocole: STX/ETX + CRC8 (compatible TestInterfaceUART)
+Protocol: STX/ETX + CRC8 (compatible with TestInterfaceUART)
 
-Câblage Pico → Pi5 (UART3):
-- GP0 (TX) → GPIO9 (RXD3) du Pi5
-- GP1 (RX) ← GPIO8 (TXD3) du Pi5
+Wiring Pico → Pi5 (UART3):
+- GP0 (TX) → GPIO9 (RXD3) on Pi5
+- GP1 (RX) ← GPIO8 (TXD3) on Pi5
 - GND → GND
 """
 
 import time
 from machine import Pin, UART, I2C
 
-# Import des modules locaux
+# Import local modules
 from lib.protocole import (
     build_frame,
     convert_accel_g_to_mg,
@@ -33,9 +33,9 @@ from lib.gps_reader import GPSReader
 from lib.micropyGPS import MicropyGPS
 
 
-# === Configuration Hardware ===
+# === Hardware Configuration ===
 
-# Communication Pi5 (UART0)
+# Pi5 communication (UART0)
 PI5_UART_ID = 0
 PI5_TX_PIN = 0   # GP0 → Pi5 GPIO9 (RX)
 PI5_RX_PIN = 1   # GP1 ← Pi5 GPIO8 (TX)
@@ -54,25 +54,25 @@ IMU_SCL_PIN = 15
 IMU_FREQ = 400000
 IMU_ADDR = 0x68
 
-# Fréquence de mise à jour
+# Update frequency
 UPDATE_RATE = 10  # Hz
 UPDATE_INTERVAL_MS = 1000 // UPDATE_RATE
 
 
 def init_hardware():
     """
-    Initialise tout le hardware
+    Initialize all hardware
 
     Returns:
         tuple: (uart_pi5, imu, gps, led)
     """
     print("\n=== Initialisation Hardware ===")
 
-    # LED intégrée
+    # Built-in LED
     led = Pin(25, Pin.OUT)
     led.on()
 
-    # UART vers Pi5
+    # UART to Pi5
     print(f"UART Pi5: UART{PI5_UART_ID} @ {PI5_BAUDRATE} (GP{PI5_TX_PIN}/GP{PI5_RX_PIN})")
     uart_pi5 = UART(PI5_UART_ID, baudrate=PI5_BAUDRATE,
                     tx=Pin(PI5_TX_PIN), rx=Pin(PI5_RX_PIN))
@@ -101,17 +101,17 @@ def init_hardware():
 
 
 def main():
-    """Boucle principale"""
+    """Main loop"""
 
     print("\n" + "=" * 50)
     print("  ROBOT AUTONOME - Pico Sensor Hub")
     print("  Protocole: STX/ETX + CRC8")
     print("=" * 50)
 
-    # Initialisation
+    # Initialization
     uart_pi5, imu, gps, led = init_hardware()
 
-    # Compteurs
+    # Counters
     seq = 0
     packets_sent = 0
     last_print = time.ticks_ms()
@@ -122,11 +122,11 @@ def main():
         while True:
             loop_start = time.ticks_ms()
 
-            # Lire capteurs
+            # Read sensors
             imu_data = imu.read_calibrated()
             gps_data = gps.read()
 
-            # Construire la trame
+            # Build the frame
             frame = build_frame(
                 seq=seq % 65536,
                 acc_x=convert_accel_g_to_mg(imu_data['acc_x']),
@@ -144,18 +144,18 @@ def main():
                 fix_quality=1 if gps_data['valid'] else 0
             )
 
-            # Envoyer
+            # Send
             uart_pi5.write(frame)
             packets_sent += 1
             seq += 1
 
-            # LED: clignote si GPS fix
+            # LED: blink if GPS fix
             if gps_data['valid']:
                 led.toggle()
             else:
                 led.off()
 
-            # Affichage debug (1x/sec)
+            # Debug display (1x/sec)
             now = time.ticks_ms()
             if time.ticks_diff(now, last_print) >= 1000:
                 gps_status = "FIX" if gps_data['valid'] else "---"

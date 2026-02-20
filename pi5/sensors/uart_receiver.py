@@ -1,9 +1,9 @@
 """
-Module UART Receiver pour Raspberry Pi 5
-Réception des données capteurs depuis le Pico via UART3
+UART Receiver module for Raspberry Pi 5
+Receives sensor data from the Pico via UART3
 
 Port: /dev/ttyAMA3 (GPIO8=TX, GPIO9=RX)
-Protocole: STX/ETX avec CRC-8 (compatible TestInterfaceUART)
+Protocol: STX/ETX with CRC-8 (compatible with TestInterfaceUART)
 """
 
 import struct
@@ -16,7 +16,7 @@ from queue import Queue, Empty
 from enum import Enum, auto
 
 
-# Constantes protocole
+# Protocol constants
 STX = 0x02
 ETX = 0x03
 PAYLOAD_LEN = 30
@@ -24,7 +24,7 @@ FRAME_LEN = 34  # STX + LEN + PAYLOAD + CRC + ETX
 
 
 class State(Enum):
-    """États de la machine à états de réception"""
+    """Reception state machine states"""
     IDLE = auto()
     GET_LEN = auto()
     GET_DATA = auto()
@@ -33,11 +33,11 @@ class State(Enum):
 
 @dataclass
 class SensorData:
-    """Structure des données capteurs reçues du Pico"""
-    # Séquence
+    """Sensor data structure received from the Pico"""
+    # Sequence
     sequence: int = 0
 
-    # BMI160 Accéléromètre (g)
+    # BMI160 Accelerometer (g)
     acc_x: float = 0.0
     acc_y: float = 0.0
     acc_z: float = 0.0
@@ -50,10 +50,10 @@ class SensorData:
     # GPS
     latitude: float = 0.0
     longitude: float = 0.0
-    altitude: float = 0.0       # mètres
+    altitude: float = 0.0       # meters
     speed: float = 0.0          # m/s
     speed_kmh: float = 0.0      # km/h
-    heading: float = 0.0        # degrés
+    heading: float = 0.0        # degrees
     satellites: int = 0
     has_fix: bool = False
 
@@ -63,7 +63,7 @@ class SensorData:
 
 def calc_crc8(data: bytes) -> int:
     """
-    Calcule le CRC-8 (polynôme 0x07) sur les données
+    Computes CRC-8 (polynomial 0x07) over the data
     """
     crc = 0x00
     for byte in data:
@@ -79,13 +79,13 @@ def calc_crc8(data: bytes) -> int:
 
 def parse_payload(payload: bytes) -> dict:
     """
-    Décode le payload en données capteurs
+    Decodes the payload into sensor data
 
     Args:
-        payload: 28 octets de données
+        payload: 28 bytes of data
 
     Returns:
-        Dict avec toutes les données décodées
+        Dict with all decoded data
     """
     # H = uint16, h = int16, i = int32, B = uint8
     (seq,
@@ -97,7 +97,7 @@ def parse_payload(payload: bytes) -> dict:
 
     return {
         'seq': seq,
-        # BMI160 - Accéléromètre (mg → g)
+        # BMI160 - Accelerometer (mg -> g)
         'acc_x': acc_x / 1000.0,
         'acc_y': acc_y / 1000.0,
         'acc_z': acc_z / 1000.0,
@@ -105,17 +105,17 @@ def parse_payload(payload: bytes) -> dict:
         'gyr_x': gyr_x / 10.0,
         'gyr_y': gyr_y / 10.0,
         'gyr_z': gyr_z / 10.0,
-        # GPS - Position (microdegrés → degrés)
+        # GPS - Position (microdegrees -> degrees)
         'latitude': latitude / 1_000_000.0,
         'longitude': longitude / 1_000_000.0,
-        # GPS - Altitude (décimètres → mètres)
+        # GPS - Altitude (decimeters -> meters)
         'altitude': altitude / 10.0,
-        # GPS - Vitesse (cm/s → m/s et km/h)
+        # GPS - Speed (cm/s -> m/s and km/h)
         'vitesse_ms': vitesse / 100.0,
         'vitesse_kmh': vitesse * 0.036,
-        # GPS - Cap (0.01° → degrés)
+        # GPS - Heading (0.01deg -> degrees)
         'cap': cap / 100.0,
-        # GPS - Satellites et fix
+        # GPS - Satellites and fix
         'satellites': satellites,
         'fix_quality': fix_quality,
     }
@@ -123,28 +123,28 @@ def parse_payload(payload: bytes) -> dict:
 
 class FrameReader:
     """
-    Machine à états pour lire les trames UART octet par octet
+    State machine for reading UART frames byte by byte
     """
 
     def __init__(self):
         self.state = State.IDLE
         self.length = 0
         self.buffer = bytearray()
-        self.frames = []  # Trames complètes décodées
-        self.errors = []  # Erreurs détectées
+        self.frames = []  # Decoded complete frames
+        self.errors = []  # Detected errors
 
     def feed(self, data: bytes):
         """
-        Alimente la machine à états avec des octets reçus
+        Feeds the state machine with received bytes
 
         Args:
-            data: Octets reçus du port série
+            data: Bytes received from the serial port
         """
         for byte in data:
             self._process_byte(byte)
 
     def _process_byte(self, byte: int):
-        """Traite un octet selon l'état courant"""
+        """Processes a byte according to the current state"""
 
         if self.state == State.IDLE:
             if byte == STX:
@@ -174,7 +174,7 @@ class FrameReader:
             self.state = State.IDLE
 
     def _validate_frame(self):
-        """Valide le CRC et extrait les données"""
+        """Validates the CRC and extracts the data"""
         # buffer = [LEN, PAYLOAD..., CRC]
         crc_data = bytes(self.buffer[:-1])  # LEN + PAYLOAD
         crc_received = self.buffer[-1]
@@ -192,15 +192,15 @@ class FrameReader:
             self._error(f"CRC invalide (recu={crc_received:02X}, calcule={crc_calculated:02X})")
 
     def _error(self, message: str):
-        """Enregistre une erreur"""
+        """Records an error"""
         self.errors.append(message)
 
     def get_frame(self) -> Optional[dict]:
         """
-        Récupère une trame décodée (FIFO)
+        Retrieves a decoded frame (FIFO)
 
         Returns:
-            Dict avec les données ou None si pas de trame
+            Dict with data or None if no frame available
         """
         if self.frames:
             return self.frames.pop(0)
@@ -208,10 +208,10 @@ class FrameReader:
 
     def get_error(self) -> Optional[str]:
         """
-        Récupère une erreur (FIFO)
+        Retrieves an error (FIFO)
 
         Returns:
-            Message d'erreur ou None
+            Error message or None
         """
         if self.errors:
             return self.errors.pop(0)
@@ -220,19 +220,19 @@ class FrameReader:
 
 class UARTReceiver:
     """
-    Récepteur UART pour données capteurs depuis le Pico
+    UART receiver for sensor data from the Pico
 
-    Protocole: STX/ETX avec CRC-8, 32 bytes par trame
-    Port: /dev/ttyAMA3 (UART3 sur GPIO8/9)
+    Protocol: STX/ETX with CRC-8, 32 bytes per frame
+    Port: /dev/ttyAMA3 (UART3 on GPIO8/9)
     """
 
     def __init__(self, port: str = '/dev/ttyAMA3', baudrate: int = 115200):
         """
-        Initialise le récepteur UART
+        Initializes the UART receiver
 
         Args:
-            port: Port série (défaut: /dev/ttyAMA3 pour Pi5 UART3)
-            baudrate: Vitesse (défaut: 115200)
+            port: Serial port (default: /dev/ttyAMA3 for Pi5 UART3)
+            baudrate: Baud rate (default: 115200)
         """
         self.port = port
         self.baudrate = baudrate
@@ -243,22 +243,22 @@ class UARTReceiver:
         self._callback = None
         self._reader = FrameReader()
 
-        # Statistiques
+        # Statistics
         self._packets_received = 0
         self._packets_lost = 0
         self._errors = 0
         self._last_sequence = -1
 
-        # Dernières données reçues
+        # Last received data
         self._last_data = None
         self._lock = threading.Lock()
 
     def open(self) -> bool:
         """
-        Ouvre la connexion série
+        Opens the serial connection
 
         Returns:
-            bool: True si réussi
+            bool: True if successful
         """
         try:
             self.serial = serial.Serial(
@@ -277,7 +277,7 @@ class UARTReceiver:
             return False
 
     def close(self):
-        """Ferme la connexion série"""
+        """Closes the serial connection"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=1.0)
@@ -287,10 +287,10 @@ class UARTReceiver:
 
     def start_async(self, callback: Optional[Callable[[SensorData], None]] = None):
         """
-        Démarre la réception en mode asynchrone (thread)
+        Starts reception in asynchronous mode (thread)
 
         Args:
-            callback: Fonction appelée pour chaque paquet reçu
+            callback: Function called for each received packet
         """
         if not self.serial:
             if not self.open():
@@ -303,25 +303,25 @@ class UARTReceiver:
         print("Réception UART démarrée (async)")
 
     def _receive_loop(self):
-        """Boucle de réception (thread)"""
+        """Reception loop (thread)"""
         while self._running:
             try:
-                # Lire les octets disponibles
+                # Read available bytes
                 if self.serial.in_waiting > 0:
                     data = self.serial.read(self.serial.in_waiting)
                     self._reader.feed(data)
 
-                # Traiter les trames décodées
+                # Process decoded frames
                 while True:
                     frame = self._reader.get_frame()
                     if frame is None:
                         break
 
-                    # Détecter les trames perdues
+                    # Detect lost frames
                     self._check_sequence(frame['seq'])
                     self._packets_received += 1
 
-                    # Convertir en SensorData
+                    # Convert to SensorData
                     sensor_data = SensorData(
                         sequence=frame['seq'],
                         acc_x=frame['acc_x'],
@@ -341,11 +341,11 @@ class UARTReceiver:
                         timestamp=time.time()
                     )
 
-                    # Stocker dernières données
+                    # Store latest data
                     with self._lock:
                         self._last_data = sensor_data
 
-                    # Callback ou queue
+                    # Callback or queue
                     if self._callback:
                         self._callback(sensor_data)
                     else:
@@ -354,7 +354,7 @@ class UARTReceiver:
                         except:
                             pass  # Queue pleine
 
-                # Traiter les erreurs
+                # Process errors
                 while True:
                     error = self._reader.get_error()
                     if error is None:
@@ -368,7 +368,7 @@ class UARTReceiver:
                 time.sleep(0.1)
 
     def _check_sequence(self, current_seq: int):
-        """Vérifie le compteur de séquence pour détecter les pertes"""
+        """Checks the sequence counter to detect lost frames"""
         if self._last_sequence >= 0:
             expected = (self._last_sequence + 1) % 65536
             if current_seq != expected:
@@ -378,13 +378,13 @@ class UARTReceiver:
 
     def read_sensor_data(self, timeout: float = 1.0) -> Optional[SensorData]:
         """
-        Lit les données capteurs
+        Reads sensor data
 
         Args:
-            timeout: Timeout en secondes
+            timeout: Timeout in seconds
 
         Returns:
-            SensorData ou None
+            SensorData or None
         """
         if self._running:
             try:
@@ -394,12 +394,12 @@ class UARTReceiver:
         return None
 
     def get_last_data(self) -> Optional[SensorData]:
-        """Retourne les dernières données reçues (thread-safe)"""
+        """Returns the last received data (thread-safe)"""
         with self._lock:
             return self._last_data
 
     def get_stats(self) -> dict:
-        """Retourne les statistiques de communication"""
+        """Returns communication statistics"""
         total = self._packets_received + self._packets_lost
         loss_rate = (self._packets_lost / total * 100) if total > 0 else 0
 
@@ -411,7 +411,7 @@ class UARTReceiver:
         }
 
 
-# Test du module
+# Module test
 if __name__ == "__main__":
     print("=" * 60)
     print("  Test UART Receiver - Pi 5")

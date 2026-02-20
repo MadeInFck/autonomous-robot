@@ -1,7 +1,7 @@
 """
-Serveur Web Flask pour controle robot Mecanum via smartphone
-Interface double joystick tactile + telemetrie temps reel
-+ Vue lidar 360deg + gestion waypoints + patrouille autonome
+Flask web server for Mecanum robot control via smartphone
+Dual touch joystick interface + real-time telemetry
++ 360deg lidar view + waypoint management + autonomous patrol
 """
 
 import json
@@ -15,7 +15,7 @@ from dataclasses import asdict
 
 
 def get_local_ip():
-    """Detecte l'adresse IP locale"""
+    """Detects the local IP address"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0)
@@ -519,7 +519,7 @@ HTML_TEMPLATE = """
 
 
 class WebServer:
-    """Serveur web Flask pour controle du robot"""
+    """Flask web server for robot control"""
 
     def __init__(self, motor_controller=None, sensor_receiver=None,
                  lidar_scanner=None, patrol_manager=None, pilot=None,
@@ -545,7 +545,7 @@ class WebServer:
         self._register_routes()
 
     def _require_auth(self, f):
-        """Decorator: HTTP Basic Auth si username/hash configures"""
+        """Decorator: HTTP Basic Auth if username/hash are configured"""
         @wraps(f)
         def decorated(*args, **kwargs):
             if not self._auth_username or not self._auth_password_hash:
@@ -562,7 +562,7 @@ class WebServer:
 
     def _register_routes(self):
 
-        # Apply auth to all requests
+        # Apply auth to all requests (before_request hook)
         @self.app.before_request
         def check_auth():
             if not self._auth_username or not self._auth_password_hash:
@@ -635,7 +635,7 @@ class WebServer:
             if scan is None:
                 return jsonify({'points': [], 'num_points': 0, 'nearest_mm': None})
 
-            # Compact format: [[angle_deg, distance_mm], ...]
+            # Compact format for client: [[angle_deg, distance_mm], ...]
             points = [
                 [round(p.angle_deg, 1), round(p.distance_mm)]
                 for p in scan.valid_points
@@ -666,17 +666,31 @@ class WebServer:
             if not self.patrol_manager or not self.sensor_receiver:
                 return jsonify({'status': 'error', 'message': 'Non disponible'}), 400
 
-            data = self.sensor_receiver.get_last_data()
-            if not data or not data.has_fix:
-                return jsonify({'status': 'error', 'message': 'Pas de fix GPS'}), 400
+            # Average N GPS readings to reduce position error
+            import time
+            GPS_SAMPLES = 10
+            GPS_INTERVAL = 0.1  # 10 Hz
+            lats, lons = [], []
+            for _ in range(GPS_SAMPLES):
+                d = self.sensor_receiver.get_last_data()
+                if d and d.has_fix:
+                    lats.append(d.latitude)
+                    lons.append(d.longitude)
+                time.sleep(GPS_INTERVAL)
 
-            idx = self.patrol_manager.record_waypoint(data.latitude, data.longitude)
-            # Auto-save
+            if len(lats) < 3:
+                return jsonify({'status': 'error', 'message': 'Pas assez de fix GPS'}), 400
+
+            avg_lat = sum(lats) / len(lats)
+            avg_lon = sum(lons) / len(lons)
+
+            idx = self.patrol_manager.record_waypoint(avg_lat, avg_lon)
+            # Auto-save waypoints
             try:
                 self.patrol_manager.save(self._patrol_file)
             except Exception:
                 pass
-            return jsonify({'status': 'ok', 'index': idx})
+            return jsonify({'status': 'ok', 'index': idx, 'samples': len(lats)})
 
         @self.app.route('/api/waypoints/<int:idx>', methods=['DELETE'])
         def api_delete_waypoint(idx):

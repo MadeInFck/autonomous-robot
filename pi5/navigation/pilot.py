@@ -1,4 +1,4 @@
-"""Pilote autonome pour patrouille GPS avec evitement d'obstacles lidar."""
+"""Autonomous pilot for GPS patrol with lidar obstacle avoidance."""
 
 import math
 import time
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class PilotState(Enum):
-    """Etats du pilote autonome."""
+    """Autonomous pilot states."""
     IDLE = auto()
     NAVIGATING = auto()
     AVOIDING = auto()
@@ -30,13 +30,13 @@ class PilotState(Enum):
 
 
 class AutonomousPilot:
-    """Pilote autonome combinant navigation GPS et evitement lidar.
+    """Autonomous pilot combining GPS navigation and lidar avoidance.
 
-    Machine a etats :
+    State machine:
       IDLE → NAVIGATING → AVOIDING → NAVIGATING → ... → WAYPOINT_REACHED
-        → NAVIGATING → ... → PATROL_COMPLETE → (boucle ou IDLE)
+        → NAVIGATING → ... → PATROL_COMPLETE → (loop or IDLE)
 
-    Boucle de controle a ~5 Hz dans un thread dedie.
+    Control loop at ~5 Hz in a dedicated thread.
     """
 
     def __init__(
@@ -56,26 +56,26 @@ class AutonomousPilot:
         self.patrol_speed = patrol_speed
         self.loop_patrol = loop_patrol
 
-        # Sous-modules
+        # Sub-modules
         self.detector = ObstacleDetector(min_quality=10)
         self.tracker = ObstacleTracker()
         self.avoider = ObstacleAvoider(obstacle_distance_mm=obstacle_distance_mm)
 
-        # PID pour le controle de cap (output = omega pour moteurs)
-        # Setpoint sera le bearing vers le waypoint
+        # PID for heading control (output = omega for motors)
+        # Setpoint will be the bearing to the waypoint
         self._heading_pid = PID(
             Kp=1.0, Ki=0.05, Kd=0.1,
             setpoint=0,
             output_limits=(-1.0, 1.0),
         )
 
-        # Etat
+        # State
         self._state = PilotState.IDLE
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
 
-        # Derniere detection lidar (pour l'API web)
+        # Last lidar detection (for the web API)
         self._last_detection = None
 
     @property
@@ -84,7 +84,7 @@ class AutonomousPilot:
             return self._state
 
     def get_status(self) -> dict:
-        """Retourne l'etat courant pour l'API web."""
+        """Returns the current state for the web API."""
         with self._lock:
             state = self._state
 
@@ -109,11 +109,11 @@ class AutonomousPilot:
         return status
 
     def get_last_detection(self):
-        """Retourne le dernier DetectionResult (pour l'API web)."""
+        """Returns the last DetectionResult (for the web API)."""
         return self._last_detection
 
     def start(self):
-        """Lance la patrouille autonome."""
+        """Starts the autonomous patrol."""
         if self._running:
             return
         if self.patrol.count == 0:
@@ -130,7 +130,7 @@ class AutonomousPilot:
         logger.info(f"Patrouille lancee avec {self.patrol.count} waypoints")
 
     def stop(self):
-        """Arrete la patrouille."""
+        """Stops the patrol."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
@@ -141,7 +141,7 @@ class AutonomousPilot:
         logger.info("Patrouille arretee")
 
     def _control_loop(self):
-        """Boucle de controle principale (~5 Hz)."""
+        """Main control loop (~5 Hz)."""
         while self._running:
             try:
                 self._control_step()
@@ -150,15 +150,15 @@ class AutonomousPilot:
             time.sleep(0.2)  # 5 Hz
 
     def _control_step(self):
-        """Un pas de la boucle de controle."""
-        # 1. Lire les capteurs
+        """One step of the control loop."""
+        # 1. Read sensors
         gps = self.sensors.get_last_data() if self.sensors else None
         if gps is None or not gps.has_fix:
             if self.motors:
                 self.motors.stop()
             return
 
-        # 2. Detection lidar
+        # 2. Lidar detection
         detection = None
         if self.lidar:
             self.lidar.process_incoming()
@@ -168,12 +168,12 @@ class AutonomousPilot:
                 detection = self.tracker.update(raw_detection)
                 self._last_detection = detection
 
-        # 3. Verifier si waypoint atteint
+        # 3. Check if waypoint reached
         if self.patrol.is_target_reached(gps.latitude, gps.longitude):
             self._on_waypoint_reached()
             return
 
-        # 4. Calculer le cap souhaite
+        # 4. Compute desired heading
         bearing = self.patrol.bearing_to_target(gps.latitude, gps.longitude)
         if bearing is None:
             if self.motors:
@@ -182,18 +182,24 @@ class AutonomousPilot:
 
         distance = self.patrol.distance_to_target(gps.latitude, gps.longitude)
 
-        # 5. Convertir bearing GPS en cap relatif robot
-        # bearing = cap absolu vers la cible (0=Nord)
-        # gps.heading = cap absolu du robot (0=Nord)
-        # heading_error = difference → combien tourner
-        heading_error = self._angle_diff(bearing, gps.heading)
+        # 5. Convert GPS bearing to robot-relative heading
+        # bearing = absolute heading to target (0=North)
+        # gps.heading = absolute heading of robot (0=North)
+        # heading_error = difference → how much to turn
+        # NOTE: GPS heading (NEO-6M) is only reliable above ~0.5 m/s.
+        # Below that, we go straight (omega=0) to gain speed.
+        MIN_SPEED_FOR_HEADING = 0.5  # m/s
+        if gps.speed < MIN_SPEED_FOR_HEADING:
+            heading_error = 0.0
+        else:
+            heading_error = self._angle_diff(bearing, gps.heading)
 
-        # 6. Evitement d'obstacles
-        # L'angle du lidar est dans le repere robot (0=avant)
-        # On veut verifier si le chemin "droit devant ajuste" est libre
-        # heading_error > 0 = tourner a droite, < 0 = tourner a gauche
-        # Dans le repere lidar : 0 = droit devant
-        desired_lidar_heading = 0  # On veut toujours aller "devant"
+        # 6. Obstacle avoidance
+        # Lidar angle is in robot frame (0=forward)
+        # We want to check if the "adjusted straight ahead" path is clear
+        # heading_error > 0 = turn right, < 0 = turn left
+        # In lidar frame: 0 = straight ahead
+        desired_lidar_heading = 0  # We always want to go "forward"
 
         if detection:
             avoidance = self.avoider.evaluate(detection, desired_lidar_heading)
@@ -206,8 +212,8 @@ class AutonomousPilot:
             elif avoidance.status == "avoiding":
                 with self._lock:
                     self._state = PilotState.AVOIDING
-                # Ajuster heading_error pour eviter l'obstacle
-                # avoidance.suggested_heading est dans le repere lidar
+                # Adjust heading_error to avoid the obstacle
+                # avoidance.suggested_heading is in lidar frame
                 heading_error = avoidance.suggested_heading
             else:
                 with self._lock:
@@ -216,29 +222,29 @@ class AutonomousPilot:
             with self._lock:
                 self._state = PilotState.NAVIGATING
 
-        # 7. PID pour omega
+        # 7. PID for omega
         self._heading_pid.setpoint = 0
         omega = -self._heading_pid(heading_error)
 
-        # 8. Vitesse proportionnelle a la distance (deceleration a l'approche)
+        # 8. Speed proportional to distance (deceleration on approach)
         if distance is not None:
-            speed_factor = min(1.0, distance / 5.0)  # Decelere sous 5m
+            speed_factor = min(1.0, distance / 5.0)  # Decelerate under 5m
         else:
             speed_factor = 1.0
         speed = int(self.patrol_speed * speed_factor)
-        speed = max(20, speed)  # Vitesse minimale
+        speed = max(20, speed)  # Minimum speed
 
-        # 9. Commander les moteurs
-        # vy = avancer, omega = tourner
+        # 9. Command the motors
+        # vy = move forward, omega = turn
         if self.motors:
             self.motors.move(vx=0, vy=1, omega=omega, speed=speed)
 
     def _on_waypoint_reached(self):
-        """Appele quand un waypoint est atteint."""
+        """Called when a waypoint is reached."""
         logger.info(f"Waypoint {self.patrol.current_index} atteint!")
 
         if not self.patrol.advance():
-            # Patrouille terminee
+            # Patrol complete
             if self.loop_patrol:
                 logger.info("Patrouille terminee, recommence en boucle")
                 self.patrol.reset()
@@ -257,6 +263,6 @@ class AutonomousPilot:
 
     @staticmethod
     def _angle_diff(a: float, b: float) -> float:
-        """Difference d'angle signee, resultat dans [-180, 180]."""
+        """Signed angle difference, result in [-180, 180]."""
         diff = (a - b + 180) % 360 - 180
         return diff

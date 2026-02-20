@@ -1,4 +1,4 @@
-"""Detection d'obstacles par clustering DBSCAN."""
+"""Obstacle detection using DBSCAN clustering."""
 
 import time
 
@@ -17,13 +17,13 @@ from lidar.detection.types import DetectionResult, Obstacle, ObstacleType
 
 
 class ObstacleDetector:
-    """Detecte et classifie les obstacles dans un scan LiDAR.
+    """Detects and classifies obstacles in a LiDAR scan.
 
-    Pipeline :
-      1. Extraction des coordonnees cartesiennes (filtrees par qualite)
-      2. Clustering DBSCAN sur les points (x, y)
-      3. Pour chaque cluster : calcul geometrique + classification
-      4. Tri par distance croissante
+    Pipeline:
+      1. Extract cartesian coordinates (filtered by quality)
+      2. DBSCAN clustering on (x, y) points
+      3. For each cluster: geometric computation + classification
+      4. Sort by ascending distance
     """
 
     def __init__(
@@ -43,7 +43,7 @@ class ObstacleDetector:
         self.wall_max_fit_error_mm = wall_max_fit_error_mm
 
     def detect(self, scan: Scan) -> DetectionResult:
-        """Detecte les obstacles dans un scan."""
+        """Detects obstacles in a scan."""
         t0 = time.perf_counter()
 
         x, y, _ = scan.to_cartesian_arrays(min_quality=self.min_quality)
@@ -82,7 +82,7 @@ class ObstacleDetector:
         )
 
     def _build_obstacle(self, obstacle_id: int, points: np.ndarray) -> Obstacle:
-        """Construit un Obstacle a partir d'un cluster de points."""
+        """Builds an Obstacle from a point cluster."""
         centroid = points.mean(axis=0)
         distances = np.linalg.norm(points, axis=1)
         nearest_idx = int(np.argmin(distances))
@@ -110,7 +110,7 @@ class ObstacleDetector:
     def _classify(
         self, points: np.ndarray
     ) -> tuple[ObstacleType, "LineSegment | None"]:
-        """Classifie un cluster en type d'obstacle."""
+        """Classifies a cluster into an obstacle type."""
         if len(points) < 2:
             return ObstacleType.UNKNOWN, None
 

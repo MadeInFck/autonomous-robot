@@ -1,4 +1,4 @@
-"""Evitement d'obstacles temps reel base sur les scans lidar."""
+"""Real-time obstacle avoidance based on lidar scans."""
 
 import math
 from dataclasses import dataclass
@@ -9,22 +9,22 @@ from lidar.detection.types import DetectionResult
 
 @dataclass
 class AvoidanceResult:
-    """Resultat de l'analyse d'evitement."""
-    clear: bool                   # True si le chemin est libre
-    suggested_heading: float      # Cap suggere en degres (0-360)
-    min_distance_mm: float        # Distance de l'obstacle le plus proche dans le couloir
+    """Result of the avoidance analysis."""
+    clear: bool                   # True if the path is clear
+    suggested_heading: float      # Suggested heading in degrees (0-360)
+    min_distance_mm: float        # Distance to the nearest obstacle in the corridor
     status: str                   # "clear", "avoiding", "blocked"
 
 
 class ObstacleAvoider:
-    """Analyse les obstacles detectes et suggere un cap d'evitement.
+    """Analyzes detected obstacles and suggests an avoidance heading.
 
-    Divise le champ de vision en secteurs et cherche le passage libre
-    le plus proche du cap souhaite.
+    Divides the field of view into sectors and finds the free passage
+    closest to the desired heading.
 
-    Convention : 0deg = avant du robot (+Y), 90deg = droite (+X).
-    Le cap du robot est donne par le GPS heading.
-    Les angles lidar sont dans le repere robot (0deg = avant).
+    Convention: 0deg = robot front (+Y), 90deg = right (+X).
+    Robot heading is given by GPS heading.
+    Lidar angles are in robot frame (0deg = forward).
     """
 
     def __init__(
@@ -35,9 +35,9 @@ class ObstacleAvoider:
     ):
         """
         Args:
-            obstacle_distance_mm: Distance min avant evitement (mm).
-            corridor_half_angle: Demi-angle du couloir frontal (degres).
-            num_sectors: Nombre de secteurs pour l'analyse 360deg.
+            obstacle_distance_mm: Minimum distance before avoidance (mm).
+            corridor_half_angle: Half-angle of the frontal corridor (degrees).
+            num_sectors: Number of sectors for the 360deg analysis.
         """
         self.obstacle_distance_mm = obstacle_distance_mm
         self.corridor_half_angle = corridor_half_angle
@@ -47,14 +47,14 @@ class ObstacleAvoider:
     def evaluate(
         self, detection: DetectionResult, desired_heading_robot: float
     ) -> AvoidanceResult:
-        """Evalue si le chemin est libre et suggere un cap.
+        """Evaluates whether the path is clear and suggests a heading.
 
         Args:
-            detection: Resultat de detection d'obstacles (repere robot).
-            desired_heading_robot: Cap souhaite dans le repere robot (degres, 0=avant).
+            detection: Obstacle detection result (robot frame).
+            desired_heading_robot: Desired heading in robot frame (degrees, 0=forward).
 
         Returns:
-            AvoidanceResult avec le cap suggere.
+            AvoidanceResult with the suggested heading.
         """
         if not detection.obstacles:
             return AvoidanceResult(
@@ -64,10 +64,10 @@ class ObstacleAvoider:
                 status="clear",
             )
 
-        # Construire la carte des secteurs occupes
+        # Build the occupied sector map
         sector_min_dist = [float('inf')] * self.num_sectors
         for obstacle in detection.obstacles:
-            # Angle du centroide dans le repere robot
+            # Centroid angle in robot frame
             cx, cy = obstacle.centroid
             angle = math.degrees(math.atan2(cx, cy)) % 360
             sector_idx = int(angle / self.sector_size) % self.num_sectors
@@ -75,7 +75,7 @@ class ObstacleAvoider:
             if dist < sector_min_dist[sector_idx]:
                 sector_min_dist[sector_idx] = dist
 
-        # Verifier le couloir frontal autour du cap souhaite
+        # Check the frontal corridor around the desired heading
         min_front_dist = self._check_corridor(
             sector_min_dist, desired_heading_robot
         )
@@ -88,7 +88,7 @@ class ObstacleAvoider:
                 status="clear",
             )
 
-        # Chemin bloque : chercher le secteur libre le plus proche
+        # Path blocked: find the nearest free sector
         best_heading = self._find_free_sector(
             sector_min_dist, desired_heading_robot
         )
@@ -101,7 +101,7 @@ class ObstacleAvoider:
                 status="avoiding",
             )
 
-        # Tout bloque
+        # Completely blocked
         return AvoidanceResult(
             clear=False,
             suggested_heading=desired_heading_robot,
@@ -112,7 +112,7 @@ class ObstacleAvoider:
     def _check_corridor(
         self, sector_min_dist: list[float], heading: float
     ) -> float:
-        """Retourne la distance min dans le couloir autour du cap."""
+        """Returns the minimum distance in the corridor around the heading."""
         min_dist = float('inf')
         for i in range(self.num_sectors):
             sector_center = (i + 0.5) * self.sector_size
@@ -125,7 +125,7 @@ class ObstacleAvoider:
     def _find_free_sector(
         self, sector_min_dist: list[float], desired_heading: float
     ) -> Optional[float]:
-        """Trouve le secteur libre le plus proche du cap souhaite."""
+        """Finds the free sector closest to the desired heading."""
         best_heading = None
         best_diff = 360.0
 
@@ -141,6 +141,6 @@ class ObstacleAvoider:
 
     @staticmethod
     def _angle_diff(a: float, b: float) -> float:
-        """Difference d'angle signee, resultat dans [-180, 180]."""
+        """Signed angle difference, result in [-180, 180]."""
         diff = (a - b + 180) % 360 - 180
         return diff

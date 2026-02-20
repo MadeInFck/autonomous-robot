@@ -1,4 +1,4 @@
-"""Types de donnees pour la detection d'obstacles."""
+"""Data types for obstacle detection."""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -8,7 +8,7 @@ import numpy as np
 
 
 class ObstacleType(Enum):
-    """Type d'obstacle detecte."""
+    """Detected obstacle type."""
     WALL = "wall"
     CORNER = "corner"
     OBJECT = "object"
@@ -17,13 +17,13 @@ class ObstacleType(Enum):
 
 @dataclass
 class LineSegment:
-    """Segment de droite ajuste sur un ensemble de points."""
-    start: np.ndarray          # (2,) point de debut
-    end: np.ndarray            # (2,) point de fin
-    direction: np.ndarray      # (2,) vecteur unitaire de direction
-    normal: np.ndarray         # (2,) vecteur unitaire normal
-    length_mm: float           # longueur du segment en mm
-    fit_error_mm: float        # erreur RMS de l'ajustement en mm
+    """Line segment fitted to a set of points."""
+    start: np.ndarray          # (2,) start point
+    end: np.ndarray            # (2,) end point
+    direction: np.ndarray      # (2,) unit direction vector
+    normal: np.ndarray         # (2,) unit normal vector
+    length_mm: float           # segment length in mm
+    fit_error_mm: float        # RMS fit error in mm
 
     def to_dict(self) -> dict:
         return {
@@ -38,7 +38,7 @@ class LineSegment:
 
 @dataclass
 class BoundingBox:
-    """Boite englobante alignee sur les axes."""
+    """Axis-aligned bounding box."""
     x_min: float
     x_max: float
     y_min: float
@@ -65,17 +65,17 @@ class BoundingBox:
 
 @dataclass
 class Obstacle:
-    """Un obstacle detecte dans un scan."""
+    """A detected obstacle in a scan."""
     id: int
     type: ObstacleType
-    points_xy: np.ndarray              # (N, 2) coordonnees des points
-    centroid: np.ndarray               # (2,) centre de masse
-    nearest_distance_mm: float         # distance au point le plus proche de l'origine
-    nearest_point: np.ndarray          # (2,) point le plus proche
+    points_xy: np.ndarray              # (N, 2) point coordinates
+    centroid: np.ndarray               # (2,) center of mass
+    nearest_distance_mm: float         # distance to the nearest point from origin
+    nearest_point: np.ndarray          # (2,) nearest point
     bbox: BoundingBox
-    line_segment: Optional[LineSegment]  # renseigne si type == WALL
+    line_segment: Optional[LineSegment]  # populated if type == WALL
     num_points: int
-    angular_span_deg: float            # etendue angulaire depuis l'origine
+    angular_span_deg: float            # angular span from origin
 
     def to_dict(self) -> dict:
         return {
@@ -93,7 +93,7 @@ class Obstacle:
 
 @dataclass
 class DetectionResult:
-    """Resultat complet d'une detection sur un scan."""
+    """Complete result of a detection on a scan."""
     obstacles: list[Obstacle] = field(default_factory=list)
     noise_points: int = 0
     scan_timestamp: float = 0.0
@@ -101,11 +101,11 @@ class DetectionResult:
 
     @property
     def nearest_obstacle(self) -> Optional[Obstacle]:
-        """Retourne l'obstacle le plus proche, ou None."""
+        """Returns the nearest obstacle, or None."""
         if not self.obstacles:
             return None
         return min(self.obstacles, key=lambda o: o.nearest_distance_mm)
 
     def by_type(self, obstacle_type: ObstacleType) -> list[Obstacle]:
-        """Filtre les obstacles par type."""
+        """Filters obstacles by type."""
         return [o for o in self.obstacles if o.type == obstacle_type]

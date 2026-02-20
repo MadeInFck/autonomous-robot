@@ -1,4 +1,4 @@
-"""Wrapper autour du SDK rplidarc1 pour accumuler des scans complets."""
+"""Wrapper around the rplidarc1 SDK to accumulate complete scans."""
 
 import asyncio
 import logging
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class LidarScanner:
-    """Encapsule le SDK rplidarc1 et accumule les points en scans 360deg complets.
+    """Encapsulates the rplidarc1 SDK and accumulates points into complete 360deg scans.
 
-    Le SDK envoie les points un par un dans une asyncio.Queue.
-    Cette classe :
-      - Lance un thread asyncio dedie pour lire le LiDAR
-      - Accumule les points et detecte les tours complets (angle qui repasse par ~0deg)
-      - Expose les scans complets via une queue thread-safe ou un callback
+    The SDK sends points one by one into an asyncio.Queue.
+    This class:
+      - Launches a dedicated asyncio thread to read the LiDAR
+      - Accumulates points and detects complete revolutions (angle wrapping around ~0deg)
+      - Exposes complete scans via a thread-safe queue or a callback
     """
 
     def __init__(
@@ -42,15 +42,15 @@ class LidarScanner:
         self._thread: Optional[Thread] = None
         self._running = False
 
-        # Accumulation du scan en cours
+        # Current scan accumulation
         self._current_points: list[ScanPoint] = []
         self._last_angle: float = -1.0
 
-        # Dernier scan complet (pour l'API web)
+        # Last complete scan (for the web API)
         self._last_scan: Optional[Scan] = None
 
     def start(self):
-        """Demarre la connexion et le scan."""
+        """Starts the connection and scanning."""
         logger.info(f"Connexion au LiDAR sur {self.port} @ {self.baudrate}")
         self._lidar = RPLidar(self.port, self.baudrate)
         self._running = True
@@ -61,7 +61,7 @@ class LidarScanner:
         logger.info("Thread asyncio demarre, scan en cours.")
 
     def stop(self):
-        """Arrete proprement le scan et la connexion."""
+        """Cleanly stops scanning and the connection."""
         if not self._running:
             return
         self._running = False
@@ -78,20 +78,20 @@ class LidarScanner:
         logger.info("LiDAR arrete.")
 
     def get_scan(self, timeout: float = 1.0) -> Optional[Scan]:
-        """Recupere le prochain scan complet (bloquant avec timeout)."""
+        """Retrieves the next complete scan (blocking with timeout)."""
         try:
             return self._scan_queue.get(timeout=timeout)
         except Empty:
             return None
 
     def get_last_scan(self) -> Optional[Scan]:
-        """Retourne le dernier scan complet (non-bloquant, thread-safe)."""
+        """Returns the last complete scan (non-blocking, thread-safe)."""
         return self._last_scan
 
     def process_incoming(self):
-        """Traite les points recus du thread asyncio et les accumule en scans.
+        """Processes points received from the asyncio thread and accumulates them into scans.
 
-        Appeler cette methode regulierement depuis le thread principal.
+        Call this method regularly from the main thread.
         """
         while True:
             try:
@@ -101,14 +101,14 @@ class LidarScanner:
             self._accumulate_point(point_dict)
 
     def _accumulate_point(self, point_dict: dict):
-        """Ajoute un point au scan en cours. Detecte les nouveaux tours."""
+        """Adds a point to the current scan. Detects new revolutions."""
         point = ScanPoint.from_sdk_dict(point_dict)
         if point is None:
             return
 
         current_angle = point.angle_deg
 
-        # Detection d'un nouveau tour : l'angle diminue de plus de 180deg
+        # New revolution detection: angle decreases by more than 180deg
         if (
             self._last_angle >= 0
             and self._last_angle > 270
@@ -132,7 +132,7 @@ class LidarScanner:
         if point.quality >= self.min_quality:
             self._current_points.append(point)
 
-    # --- Thread asyncio interne ---
+    # --- Internal asyncio thread ---
 
     def _run_loop(self, loop: asyncio.AbstractEventLoop):
         asyncio.set_event_loop(loop)
@@ -149,7 +149,7 @@ class LidarScanner:
         task_forward.cancel()
 
     async def _forward_points(self):
-        """Transfere les points de l'asyncio.Queue vers la queue thread-safe."""
+        """Transfers points from the asyncio.Queue to the thread-safe queue."""
         while not self._lidar.stop_event.is_set():
             try:
                 data = await asyncio.wait_for(

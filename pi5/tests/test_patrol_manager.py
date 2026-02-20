@@ -1,4 +1,4 @@
-"""Tests du gestionnaire de patrouille (PatrolManager)."""
+"""Tests for the patrol manager (PatrolManager)."""
 
 import json
 import os
@@ -100,25 +100,25 @@ class TestGPSCalculations:
         assert 390_000 < dist < 395_000
 
     def test_haversine_short_distance(self, pm):
-        # Deux points a ~100m
+        # Two points ~100m apart
         pm.record_waypoint(48.8567, 2.3522)
         dist = pm.distance_to_target(48.8566, 2.3522)
         assert 10 < dist < 15  # ~11m pour 0.0001 deg de latitude
 
     def test_bearing_north(self, pm):
-        # Point au nord: bearing ~0
+        # Point to the north: bearing ~0
         pm.record_waypoint(49.0, 2.3522)
         bearing = pm.bearing_to_target(48.0, 2.3522)
         assert abs(bearing - 0) < 1 or abs(bearing - 360) < 1
 
     def test_bearing_east(self, pm):
-        # Point a l'est: bearing ~90
+        # Point to the east: bearing ~90
         pm.record_waypoint(48.8566, 3.3522)
         bearing = pm.bearing_to_target(48.8566, 2.3522)
         assert 85 < bearing < 95
 
     def test_bearing_south(self, pm):
-        # Point au sud: bearing ~180
+        # Point to the south: bearing ~180
         pm.record_waypoint(47.0, 2.3522)
         bearing = pm.bearing_to_target(48.0, 2.3522)
         assert 175 < bearing < 185
@@ -131,12 +131,12 @@ class TestGPSCalculations:
 
     def test_target_reached(self, pm):
         pm.record_waypoint(48.85660, 2.35220)
-        # Position tres proche (< 3m)
+        # Position very close (< 3m)
         assert pm.is_target_reached(48.85660, 2.35220)
 
     def test_target_not_reached(self, pm):
         pm.record_waypoint(48.85660, 2.35220)
-        # Position a ~1km
+        # Position ~1km away
         assert not pm.is_target_reached(48.8566, 2.3400)
 
 

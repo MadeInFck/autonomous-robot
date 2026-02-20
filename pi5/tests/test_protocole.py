@@ -1,6 +1,6 @@
 """
-Tests du protocole UART (CRC-8, build_frame, conversions)
-Verifie la compatibilite entre le cote Pico (build_frame) et Pi5 (parse_payload)
+Tests for UART protocol (CRC-8, build_frame, conversions)
+Verifies compatibility between the Pico side (build_frame) and Pi5 side (parse_payload)
 """
 
 import struct
@@ -8,7 +8,7 @@ import sys
 import os
 import pytest
 
-# Ajouter les chemins pour importer les modules
+# Add paths to import the modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sensors'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'pico', 'lib'))
 
@@ -33,7 +33,7 @@ class TestCRC8:
         assert 0 <= crc <= 255
 
     def test_crc_pico_pi5_identical(self):
-        """Les deux implementations CRC-8 doivent etre identiques"""
+        """Both CRC-8 implementations must be identical"""
         test_data = [
             b'',
             b'\x00',
@@ -49,13 +49,13 @@ class TestCRC8:
         assert pi5_crc8(b'\x01') != pi5_crc8(b'\x02')
 
     def test_crc_single_bit_sensitivity(self):
-        """Un seul bit change doit changer le CRC"""
+        """A single bit change must change the CRC"""
         crc1 = pi5_crc8(b'\x00')
         crc2 = pi5_crc8(b'\x01')
         assert crc1 != crc2
 
 
-# ===== Constantes protocole =====
+# ===== Protocol constants =====
 
 class TestConstantes:
     def test_payload_len_match(self):
@@ -120,7 +120,7 @@ class TestBuildFrame:
         assert frame[1] == PAYLOAD_LEN
 
     def test_frame_crc_valid(self):
-        """Le CRC dans la trame doit correspondre au calcul"""
+        """The CRC in the frame must match the calculation"""
         frame = build_frame(42, 100, -200, 981, 10, -20, 30,
                             48856600, 2352200, 352, 150, 12750)
         crc_data = frame[1:-2]  # LEN + PAYLOAD
@@ -155,8 +155,8 @@ class TestRoundTrip:
         assert data['fix_quality'] == 0
 
     def test_realistic_values(self):
-        """Valeurs realistes de capteurs"""
-        # Donnees brutes cote Pico
+        """Realistic sensor values"""
+        # Raw data on Pico side
         acc_x_mg = convert_accel_g_to_mg(0.012)     # 12 mg
         acc_y_mg = convert_accel_g_to_mg(-0.005)     # -5 mg
         acc_z_mg = convert_accel_g_to_mg(0.981)      # 981 mg
@@ -194,7 +194,7 @@ class TestRoundTrip:
         assert data['fix_quality'] == 1
 
     def test_negative_coordinates(self):
-        """Coordonnees negatives (hemisphere sud/ouest)"""
+        """Negative coordinates (southern/western hemisphere)"""
         lat = convert_coord_to_microdeg(-33.8688)  # Sydney
         lon = convert_coord_to_microdeg(151.2093)
 
@@ -206,7 +206,7 @@ class TestRoundTrip:
         assert abs(data['longitude'] - 151.2093) < 0.000001
 
     def test_gps_no_fix(self):
-        """GPS sans fix: fix_quality = 0"""
+        """GPS without fix: fix_quality = 0"""
         frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                             satellites=4, fix_quality=0)
         payload = frame[2:-2]
@@ -215,7 +215,7 @@ class TestRoundTrip:
         assert data['fix_quality'] == 0
 
     def test_max_speed(self):
-        """Vitesse maximale (65535 cm/s = 655.35 m/s)"""
+        """Maximum speed (65535 cm/s = 655.35 m/s)"""
         frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65535, 0)
         payload = frame[2:-2]
         data = parse_payload(payload)

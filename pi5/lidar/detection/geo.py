@@ -1,4 +1,4 @@
-"""Fonctions geometriques pour la detection d'obstacles."""
+"""Geometric functions for obstacle detection."""
 
 import numpy as np
 
@@ -6,7 +6,7 @@ from lidar.detection.types import BoundingBox, LineSegment
 
 
 def fit_line_segment(points: np.ndarray) -> LineSegment:
-    """Ajuste un segment de droite sur un ensemble de points via PCA."""
+    """Fits a line segment to a set of points via PCA."""
     centroid = points.mean(axis=0)
     centered = points - centroid
 
@@ -37,7 +37,7 @@ def fit_line_segment(points: np.ndarray) -> LineSegment:
 
 
 def compute_bounding_box(points: np.ndarray) -> BoundingBox:
-    """Calcule la boite englobante alignee sur les axes."""
+    """Computes the axis-aligned bounding box."""
     return BoundingBox(
         x_min=float(points[:, 0].min()),
         x_max=float(points[:, 0].max()),
@@ -47,7 +47,7 @@ def compute_bounding_box(points: np.ndarray) -> BoundingBox:
 
 
 def compute_angular_span(points: np.ndarray) -> float:
-    """Calcule l'etendue angulaire des points vus depuis l'origine (en degres)."""
+    """Computes the angular span of points as seen from the origin (in degrees)."""
     angles = np.arctan2(points[:, 0], points[:, 1])
     angle_min = angles.min()
     angle_max = angles.max()
@@ -63,7 +63,7 @@ def compute_angular_span(points: np.ndarray) -> float:
 
 
 def linearity_ratio(points: np.ndarray) -> float:
-    """Ratio de linearite base sur PCA (0=disque, 1=ligne)."""
+    """PCA-based linearity ratio (0=disc, 1=line)."""
     if len(points) < 2:
         return 0.0
 

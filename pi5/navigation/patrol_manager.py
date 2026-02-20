@@ -1,4 +1,4 @@
-"""Gestion du parcours de patrouille par waypoints GPS."""
+"""GPS waypoint patrol route management."""
 
 import json
 import math
@@ -7,32 +7,32 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 
 
-# Rayon moyen de la Terre en metres
+# Mean Earth radius in meters
 EARTH_RADIUS_M = 6_371_000
 
 
 @dataclass
 class Waypoint:
-    """Un point de passage GPS."""
+    """A GPS waypoint."""
     latitude: float
     longitude: float
     label: str = ""
 
 
 class PatrolManager:
-    """Gere une liste de waypoints GPS pour la patrouille.
+    """Manages a list of GPS waypoints for patrol.
 
-    Fonctionnalites :
-      - Enregistrement / suppression de waypoints
-      - Sauvegarde / chargement depuis JSON
-      - Navigation sequentielle avec boucle
-      - Calcul de bearing et distance (haversine)
+    Features:
+      - Recording / deleting waypoints
+      - Saving / loading from JSON
+      - Sequential navigation with looping
+      - Bearing and distance calculation (haversine)
     """
 
     def __init__(self, waypoint_radius: float = 3.0):
         """
         Args:
-            waypoint_radius: Distance en metres pour considerer un waypoint atteint.
+            waypoint_radius: Distance in meters to consider a waypoint reached.
         """
         self._waypoints: list[Waypoint] = []
         self._current_index: int = 0
@@ -41,7 +41,7 @@ class PatrolManager:
     # --- CRUD waypoints ---
 
     def record_waypoint(self, lat: float, lon: float, label: str = "") -> int:
-        """Enregistre un nouveau waypoint. Retourne son index."""
+        """Records a new waypoint. Returns its index."""
         if not label:
             label = f"WP{len(self._waypoints)}"
         wp = Waypoint(latitude=lat, longitude=lon, label=label)
@@ -49,7 +49,7 @@ class PatrolManager:
         return len(self._waypoints) - 1
 
     def delete_waypoint(self, index: int) -> bool:
-        """Supprime un waypoint par index. Retourne True si supprime."""
+        """Deletes a waypoint by index. Returns True if deleted."""
         if 0 <= index < len(self._waypoints):
             self._waypoints.pop(index)
             if self._current_index >= len(self._waypoints):
@@ -58,7 +58,7 @@ class PatrolManager:
         return False
 
     def get_waypoints(self) -> list[dict]:
-        """Retourne la liste des waypoints avec index courant."""
+        """Returns the list of waypoints with current index."""
         return [
             {
                 "index": i,
@@ -81,7 +81,7 @@ class PatrolManager:
     # --- Navigation ---
 
     def get_current_target(self) -> Optional[Waypoint]:
-        """Retourne le waypoint courant, ou None si pas de waypoints."""
+        """Returns the current waypoint, or None if no waypoints."""
         if not self._waypoints:
             return None
         if self._current_index >= len(self._waypoints):
@@ -89,7 +89,7 @@ class PatrolManager:
         return self._waypoints[self._current_index]
 
     def advance(self) -> bool:
-        """Passe au waypoint suivant. Retourne False si patrouille terminee."""
+        """Advances to the next waypoint. Returns False if patrol is complete."""
         if not self._waypoints:
             return False
         self._current_index += 1
@@ -98,23 +98,23 @@ class PatrolManager:
         return True
 
     def is_complete(self) -> bool:
-        """True si tous les waypoints ont ete visites."""
+        """True if all waypoints have been visited."""
         return self._current_index >= len(self._waypoints)
 
     def reset(self):
-        """Remet l'index a 0 pour recommencer la patrouille."""
+        """Resets the index to 0 to restart the patrol."""
         self._current_index = 0
 
-    # --- Calculs GPS ---
+    # --- GPS calculations ---
 
     def bearing_to_target(self, lat: float, lon: float) -> Optional[float]:
-        """Calcule le cap (bearing) vers le waypoint courant en degres (0-360).
+        """Computes the bearing to the current waypoint in degrees (0-360).
 
         Args:
-            lat, lon: Position actuelle en degres decimaux.
+            lat, lon: Current position in decimal degrees.
 
         Returns:
-            Cap en degres (0=Nord, 90=Est) ou None si pas de cible.
+            Bearing in degrees (0=North, 90=East) or None if no target.
         """
         target = self.get_current_target()
         if target is None:
@@ -122,13 +122,13 @@ class PatrolManager:
         return self._bearing(lat, lon, target.latitude, target.longitude)
 
     def distance_to_target(self, lat: float, lon: float) -> Optional[float]:
-        """Calcule la distance au waypoint courant en metres.
+        """Computes the distance to the current waypoint in meters.
 
         Args:
-            lat, lon: Position actuelle en degres decimaux.
+            lat, lon: Current position in decimal degrees.
 
         Returns:
-            Distance en metres ou None si pas de cible.
+            Distance in meters or None if no target.
         """
         target = self.get_current_target()
         if target is None:
@@ -136,16 +136,16 @@ class PatrolManager:
         return self._haversine(lat, lon, target.latitude, target.longitude)
 
     def is_target_reached(self, lat: float, lon: float) -> bool:
-        """True si la position actuelle est dans le rayon du waypoint courant."""
+        """True if the current position is within the waypoint radius."""
         dist = self.distance_to_target(lat, lon)
         if dist is None:
             return False
         return dist <= self.waypoint_radius
 
-    # --- Persistance JSON ---
+    # --- JSON persistence ---
 
     def save(self, filepath: str):
-        """Sauvegarde les waypoints en JSON."""
+        """Saves waypoints to JSON."""
         data = {
             "waypoints": [asdict(wp) for wp in self._waypoints],
             "waypoint_radius": self.waypoint_radius,
@@ -155,7 +155,7 @@ class PatrolManager:
             json.dump(data, f, indent=2)
 
     def load(self, filepath: str) -> bool:
-        """Charge les waypoints depuis JSON. Retourne True si reussi."""
+        """Loads waypoints from JSON. Returns True if successful."""
         if not os.path.exists(filepath):
             return False
         with open(filepath, "r") as f:
@@ -168,11 +168,11 @@ class PatrolManager:
         self._current_index = 0
         return True
 
-    # --- Formules geodesiques ---
+    # --- Geodesic formulas ---
 
     @staticmethod
     def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """Distance haversine entre deux points GPS en metres."""
+        """Haversine distance between two GPS points in meters."""
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
         dlat = lat2 - lat1
         dlon = lon2 - lon1
@@ -182,7 +182,7 @@ class PatrolManager:
 
     @staticmethod
     def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """Bearing initial entre deux points GPS en degres (0-360)."""
+        """Initial bearing between two GPS points in degrees (0-360)."""
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
         dlon = lon2 - lon1
         x = math.sin(dlon) * math.cos(lat2)
