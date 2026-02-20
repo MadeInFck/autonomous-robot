@@ -321,6 +321,7 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [ ] Tester patrouille autonome (suivi waypoints GPS, arrêt, changement de mode)
 - [ ] Intégrer Raspberry Pi AI Camera (détection intelligente d'obstacles, personnes, animaux)
 - [ ] Notifications push + sirène en cas de détection d'intrusion
+- [ ] Créer une app iOS native à l'image de l'interface web existante
 
 ## Licence
 

@@ -321,6 +321,7 @@ Speeds are normalized by the maximum value to prevent saturation.
 - [ ] Test autonomous patrol (GPS waypoint following, stop, mode switching)
 - [ ] Integrate Raspberry Pi AI Camera (intelligent obstacle/person/animal detection)
 - [ ] Push notifications + siren on intrusion detection
+- [ ] Create a native iOS app mirroring the existing web interface
 
 ## License
 

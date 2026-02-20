@@ -103,6 +103,9 @@ HTML_TEMPLATE = """
         .patrol-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-top: 6px; }
 
         .footer-space { height: 20px; flex-shrink: 0; }
+        .shutdown-section { display: flex; justify-content: center; padding: 10px; }
+        .shutdown-btn { padding: 8px 20px; border-radius: 6px; border: 1px solid rgba(233,69,96,0.6); background: rgba(233,69,96,0.15); color: #e94560; font-size: 0.8em; cursor: pointer; touch-action: manipulation; }
+        .shutdown-btn:active { background: rgba(233,69,96,0.35); }
 
         .toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.85em; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .toast.show { opacity: 1; }
@@ -199,7 +202,7 @@ HTML_TEMPLATE = """
 
         <div class="speed-control">
             <button class="speed-btn" id="speedDown">-</button>
-            <span class="speed-value" id="speedValue">50%</span>
+            <span class="speed-value" id="speedValue">30%</span>
             <button class="speed-btn" id="speedUp">+</button>
         </div>
     </div>
@@ -226,6 +229,9 @@ HTML_TEMPLATE = """
         <div class="patrol-status" id="patrolStatus">--</div>
     </div>
 
+    <div class="shutdown-section">
+        <button class="shutdown-btn" id="shutdownBtn">&#9211; Eteindre le robot</button>
+    </div>
     <div class="footer-space"></div>
     <div class="toast" id="toast"></div>
 
@@ -237,7 +243,7 @@ HTML_TEMPLATE = """
             setTimeout(() => t.classList.remove('show'), duration);
         }
         /* ===== Joystick control (unchanged) ===== */
-        let moveX = 0, moveY = 0, rotation = 0, maxSpeed = 50;
+        let moveX = 0, moveY = 0, rotation = 0, maxSpeed = 30;
         const moveJoystick = document.getElementById('moveJoystick');
         const moveStick = document.getElementById('moveStick');
         const rotateJoystick = document.getElementById('rotateJoystick');
@@ -283,11 +289,11 @@ HTML_TEMPLATE = """
         setupJoystick(rotateJoystick, rotateStick, true);
 
         document.getElementById('speedDown').addEventListener('click', () => {
-            maxSpeed = Math.max(30, maxSpeed - 10);
+            maxSpeed = Math.max(10, maxSpeed - 5);
             document.getElementById('speedValue').textContent = maxSpeed + '%';
         });
         document.getElementById('speedUp').addEventListener('click', () => {
-            maxSpeed = Math.min(100, maxSpeed + 10);
+            maxSpeed = Math.min(100, maxSpeed + 5);
             document.getElementById('speedValue').textContent = maxSpeed + '%';
         });
 
@@ -509,6 +515,14 @@ HTML_TEMPLATE = """
             } catch(e) {}
         }, 1000);
 
+        // Shutdown button
+        document.getElementById('shutdownBtn').addEventListener('click', () => {
+            if (!confirm('Eteindre le robot proprement ?')) return;
+            fetch('/api/shutdown', { method: 'POST' })
+                .then(() => showToast("Extinction en cours... Vous pouvez couper l'alimentation dans 10s.", 'success', 8000))
+                .catch(() => showToast("Erreur lors de l'extinction", 'error'));
+        });
+
         // Initial load
         refreshWaypoints();
         sendCommand();
@@ -713,6 +727,19 @@ class WebServer:
             except Exception:
                 pass
             return jsonify({'status': 'ok'})
+
+        # --- System routes ---
+
+        @self.app.route('/api/shutdown', methods=['POST'])
+        def api_shutdown():
+            import subprocess
+            import threading
+            def _do_shutdown():
+                import time
+                time.sleep(1)
+                subprocess.run(['sudo', 'shutdown', 'now'])
+            threading.Thread(target=_do_shutdown, daemon=True).start()
+            return jsonify({'status': 'ok', 'message': 'Extinction en cours...'})
 
         # --- Patrol routes ---
 
