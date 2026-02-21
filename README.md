@@ -319,9 +319,11 @@ Speeds are normalized by the maximum value to prevent saturation.
 - [x] Add obstacle detection (RPLidar C1)
 - [x] Secure web interface (auth + TLS)
 - [ ] Test autonomous patrol (GPS waypoint following, stop, mode switching)
+- [ ] Test LiDAR obstacle avoidance (real-world scenarios: static obstacles, passing distance, avoidance recovery)
 - [ ] Integrate Raspberry Pi AI Camera (intelligent obstacle/person/animal detection)
 - [ ] Push notifications + siren on intrusion detection
 - [ ] Create a native iOS app mirroring the existing web interface
+- [ ] Add BMM150 magnetometer for absolute heading (replaces GPS COG, works at rest and low speed) — after patrol validation
 
 ## License
 

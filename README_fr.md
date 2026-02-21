@@ -319,9 +319,11 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [x] Ajouter détection d'obstacles (RPLidar C1)
 - [x] Sécuriser l'interface web (auth + TLS)
 - [ ] Tester patrouille autonome (suivi waypoints GPS, arrêt, changement de mode)
+- [ ] Tester l'évitement d'obstacles lidar (scénarios réels : obstacles statiques, distance de passage, récupération après évitement)
 - [ ] Intégrer Raspberry Pi AI Camera (détection intelligente d'obstacles, personnes, animaux)
 - [ ] Notifications push + sirène en cas de détection d'intrusion
 - [ ] Créer une app iOS native à l'image de l'interface web existante
+- [ ] Ajouter magnétomètre BMM150 pour cap absolu (remplace GPS COG, fonctionnel à l'arrêt et à basse vitesse) — après validation de la patrouille
 
 ## Licence
 

@@ -43,7 +43,8 @@ HTML_TEMPLATE = """
         .header { text-align: center; padding: 8px; background: rgba(0,0,0,0.3); flex-shrink: 0; }
         .header h1 { font-size: 1.1em; font-weight: 500; }
 
-        .status-bar { display: flex; justify-content: space-around; padding: 6px; background: rgba(0,0,0,0.2); font-size: 0.75em; flex-shrink: 0; flex-wrap: wrap; gap: 4px; }
+        .status-bar { display: flex; flex-direction: column; padding: 4px 8px; background: rgba(0,0,0,0.2); font-size: 0.75em; flex-shrink: 0; gap: 3px; }
+        .status-row { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 4px; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f44; display: inline-block; margin-right: 4px; vertical-align: middle; }
         .status-dot.connected { background: #4f4; }
         .mode-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.85em; font-weight: bold; }
@@ -100,7 +101,11 @@ HTML_TEMPLATE = """
         .wp-item.active { background: rgba(74,153,120,0.3); }
         .wp-delete { color: #f66; cursor: pointer; margin-left: 8px; }
 
-        .patrol-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-top: 6px; }
+        .patrol-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-top: 6px; white-space: pre-line; }
+
+        .map-section { display: flex; flex-direction: column; align-items: center; padding: 6px; background: rgba(0,0,0,0.1); }
+        #mapCanvas { background: #0a0a1a; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); }
+        .map-info { font-size: 0.65em; font-family: monospace; opacity: 0.6; margin-top: 4px; }
 
         .footer-space { height: 20px; flex-shrink: 0; }
         .shutdown-section { display: flex; justify-content: center; padding: 10px; }
@@ -123,9 +128,14 @@ HTML_TEMPLATE = """
     <div class="header"><h1>Robot Mecanum</h1></div>
 
     <div class="status-bar">
-        <span><span class="status-dot" id="connDot"></span><span id="connText">...</span></span>
-        <span>GPS: <span class="status-dot" id="gpsDot"></span><span id="gpsFixStatus">--</span> | <span id="gpsSats">0</span> sat</span>
-        <span class="mode-badge manual" id="modeBadge">MANUEL</span>
+        <div class="status-row">
+            <span><span class="status-dot" id="connDot"></span>WiFi: <span id="connText">...</span></span>
+            <span>GPS: <span class="status-dot" id="gpsDot"></span><span id="gpsFixStatus">--</span> | <span id="gpsSats">0</span> sat</span>
+            <span class="mode-badge manual" id="modeBadge">MANUEL</span>
+        </div>
+        <div class="status-row">
+            <span>UART: <span class="status-dot" id="uartDot"></span><span id="uartText">--</span></span>
+        </div>
     </div>
 
     <div class="sensors-panel">
@@ -207,6 +217,26 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- Patrol section -->
+    <div class="section-title">Patrouille</div>
+    <div class="patrol-section">
+        <div class="patrol-controls">
+            <button class="patrol-btn record" onclick="recordWaypoint()">Enregistrer pos.</button>
+            <button class="patrol-btn start" onclick="startPatrol()">Lancer</button>
+            <button class="patrol-btn stop" onclick="stopPatrol()">Arrêter</button>
+            <button class="patrol-btn" onclick="deleteLastWaypoint()">Suppr. dernier</button>
+        </div>
+        <div class="waypoint-list" id="waypointList">Aucun waypoint</div>
+        <div class="patrol-status" id="patrolStatus">--</div>
+    </div>
+
+    <!-- Map section -->
+    <div class="section-title">Carte GPS</div>
+    <div class="map-section">
+        <canvas id="mapCanvas" width="280" height="280"></canvas>
+        <div class="map-info"><span id="mapInfo">En attente...</span></div>
+    </div>
+
     <!-- Lidar section -->
     <div class="section-title">LiDAR 360</div>
     <div class="lidar-section">
@@ -214,19 +244,6 @@ HTML_TEMPLATE = """
             <canvas id="lidarCanvas" width="200" height="200"></canvas>
         </div>
         <div class="lidar-info"><span id="lidarInfo">--</span></div>
-    </div>
-
-    <!-- Patrol section -->
-    <div class="section-title">Patrouille</div>
-    <div class="patrol-section">
-        <div class="patrol-controls">
-            <button class="patrol-btn record" onclick="recordWaypoint()">Enregistrer pos.</button>
-            <button class="patrol-btn start" onclick="startPatrol()">Lancer</button>
-            <button class="patrol-btn stop" onclick="stopPatrol()">Arreter</button>
-            <button class="patrol-btn" onclick="deleteLastWaypoint()">Suppr. dernier</button>
-        </div>
-        <div class="waypoint-list" id="waypointList">Aucun waypoint</div>
-        <div class="patrol-status" id="patrolStatus">--</div>
     </div>
 
     <div class="shutdown-section">
@@ -325,10 +342,36 @@ HTML_TEMPLATE = """
                 } catch(e) { setConnected(false); }
             }, 50);
         }
+        let _wasConnected = null;
         function setConnected(c) {
             document.getElementById('connDot').classList.toggle('connected', c);
-            document.getElementById('connText').textContent = c ? 'OK' : 'Err';
+            document.getElementById('connText').textContent = c ? 'OK' : 'Hors ligne';
+            if (_wasConnected !== null && _wasConnected !== c) {
+                if (c) {
+                    // Reconnected: flush joystick state and send stop immediately
+                    moveX = 0; moveY = 0; rotation = 0;
+                    const sticks = [moveStick, rotateStick];
+                    sticks.forEach(s => { s.style.left = '42.5px'; s.style.top = '42.5px'; });
+                    fetch('/api/stop', { method: 'POST' });
+                    showToast("Connexion rétablie", 'success', 4000);
+                } else {
+                    showToast("Connexion perdue - robot arrêté", 'error', 4000);
+                }
+            }
+            _wasConnected = c;
         }
+
+        /* ===== UART status polling ===== */
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) return;
+                const d = await res.json();
+                const ok = d.uart_ok === true;
+                document.getElementById('uartDot').classList.toggle('connected', ok);
+                document.getElementById('uartText').textContent = ok ? 'Pico OK' : 'Pico --';
+            } catch(e) {}
+        }, 2000);
         function headingToCardinal(deg) {
             const dirs = ['N','NE','E','SE','S','SO','O','NO'];
             return dirs[Math.round(deg/45) % 8];
@@ -362,6 +405,17 @@ HTML_TEMPLATE = """
                 document.getElementById('gpsSpeed').textContent = speedKmh.toFixed(1);
                 document.getElementById('gpsHeading').textContent = (d.heading !== undefined) ? d.heading.toFixed(0) + 'deg' : '--';
                 document.getElementById('gpsCardinal').textContent = (d.heading !== undefined) ? headingToCardinal(d.heading) : '';
+                if (hasFix) {
+                    _mapRawPos = { lat: d.latitude, lon: d.longitude };
+                    _rawPosBuffer.push({ lat: d.latitude, lon: d.longitude });
+                    if (_rawPosBuffer.length > 3) _rawPosBuffer.shift();
+                    const avgLat = _rawPosBuffer.reduce((s,p) => s + p.lat, 0) / _rawPosBuffer.length;
+                    const avgLon = _rawPosBuffer.reduce((s,p) => s + p.lon, 0) / _rawPosBuffer.length;
+                    _mapCurrentPos = { lat: avgLat, lon: avgLon, heading: d.heading || 0 };
+                } else {
+                    _mapRawPos = null; _mapCurrentPos = null; _rawPosBuffer = [];
+                }
+                drawMap();
             } catch(e) {}
         }, 1000);
 
@@ -428,14 +482,232 @@ HTML_TEMPLATE = """
 
         drawLidar([]); // Initial empty
 
+        /* ===== GPS Map ===== */
+        const mapCanvas = document.getElementById('mapCanvas');
+        const mapCtx = mapCanvas.getContext('2d');
+        let _mapWaypoints = [];
+        let _mapCurrentPos = null;  // averaged position (3-sample): white triangle
+        let _mapRawPos = null;      // raw GPS reading: orange dot
+        let _rawPosBuffer = [];     // 3-sample rolling average (client-side)
+
+        function drawMap() {
+            const W = mapCanvas.width, H = mapCanvas.height;
+            mapCtx.clearRect(0, 0, W, H);
+            mapCtx.fillStyle = '#0a0a1a';
+            mapCtx.fillRect(0, 0, W, H);
+
+            const all = [
+                ..._mapWaypoints.map(w => ({lat: w.latitude, lon: w.longitude})),
+                ...(_mapCurrentPos ? [{lat: _mapCurrentPos.lat, lon: _mapCurrentPos.lon}] : []),
+                ...(_mapRawPos ? [{lat: _mapRawPos.lat, lon: _mapRawPos.lon}] : [])
+            ];
+
+            if (all.length === 0) {
+                mapCtx.fillStyle = 'rgba(255,255,255,0.3)';
+                mapCtx.font = '12px sans-serif';
+                mapCtx.textAlign = 'center';
+                mapCtx.fillText('Aucun point GPS', W/2, H/2);
+                document.getElementById('mapInfo').textContent = 'En attente...';
+                return;
+            }
+
+            const lats = all.map(p => p.lat);
+            const lons = all.map(p => p.lon);
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+            const origin = { lat: (minLat + maxLat) / 2, lon: (minLon + maxLon) / 2 };
+            const cosLat = Math.cos(origin.lat * Math.PI / 180);
+            const dxM = (maxLon - minLon) * cosLat * 111320;
+            const dyM = (maxLat - minLat) * 111320;
+            const extent = Math.max(dxM, dyM, 10);  // at least 10m visible radius
+            const padding = 36;
+            const scale = (Math.min(W, H) / 2 - padding) / extent;
+
+            function toCanvas(lat, lon) {
+                const x = (lon - origin.lon) * cosLat * 111320;
+                const y = -(lat - origin.lat) * 111320;
+                return { cx: W/2 + x * scale, cy: H/2 + y * scale };
+            }
+
+            // Scale bar (bottom-left)
+            const barM = [1, 2, 5, 10, 20, 50].find(v => v * scale >= 30) || 50;
+            const barPx = barM * scale;
+            mapCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+            mapCtx.lineWidth = 2;
+            mapCtx.beginPath();
+            mapCtx.moveTo(10, H - 10); mapCtx.lineTo(10 + barPx, H - 10);
+            mapCtx.stroke();
+            mapCtx.fillStyle = 'rgba(255,255,255,0.5)';
+            mapCtx.font = '9px monospace';
+            mapCtx.textAlign = 'left';
+            mapCtx.fillText(barM + 'm', 14, H - 14);
+
+            // North indicator (top-right)
+            mapCtx.fillStyle = 'rgba(255,255,255,0.6)';
+            mapCtx.font = '11px sans-serif';
+            mapCtx.textAlign = 'right';
+            mapCtx.fillText('N\u2191', W - 6, 16);
+
+            // Legend (top-left) — semi-transparent background for readability
+            mapCtx.fillStyle = 'rgba(0,0,0,0.45)';
+            mapCtx.fillRect(2, 2, 68, 78);
+            mapCtx.font = '9px monospace';
+            mapCtx.textAlign = 'left';
+            mapCtx.fillStyle = '#f93';
+            mapCtx.fillText('\u25cf brut',  6, 14);
+            mapCtx.fillStyle = 'rgba(255,255,255,0.9)';
+            mapCtx.fillText('\u25b2 moy.',  6, 26);
+            mapCtx.fillStyle = '#4a90d9';
+            mapCtx.fillText('\u25cf WP',    6, 38);
+            mapCtx.fillStyle = '#4f4';
+            mapCtx.fillText('\u25cf cible', 6, 50);
+            mapCtx.fillStyle = 'rgba(255,255,255,0.7)';
+            mapCtx.fillText('\u2014 leg',      6, 62);
+            mapCtx.fillStyle = 'rgba(255,255,255,0.25)';
+            mapCtx.fillText('- - route',   6, 74);
+
+            // Full patrol route: faint dashed lines between all waypoints
+            if (_mapWaypoints.length > 1) {
+                mapCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+                mapCtx.lineWidth = 1;
+                mapCtx.setLineDash([3, 5]);
+                mapCtx.beginPath();
+                _mapWaypoints.forEach((wp, i) => {
+                    const {cx, cy} = toCanvas(wp.latitude, wp.longitude);
+                    if (i === 0) mapCtx.moveTo(cx, cy); else mapCtx.lineTo(cx, cy);
+                });
+                mapCtx.stroke();
+                mapCtx.setLineDash([]);
+            }
+
+            // Current navigation leg: averaged position → active waypoint (solid, bright)
+            if (_mapCurrentPos) {
+                const activeWP = _mapWaypoints.find(w => w.active);
+                if (activeWP) {
+                    const {cx: x1, cy: y1} = toCanvas(_mapCurrentPos.lat, _mapCurrentPos.lon);
+                    const {cx: x2, cy: y2} = toCanvas(activeWP.latitude, activeWP.longitude);
+                    mapCtx.strokeStyle = 'rgba(255,255,255,0.7)';
+                    mapCtx.lineWidth = 1.5;
+                    mapCtx.beginPath();
+                    mapCtx.moveTo(x1, y1);
+                    mapCtx.lineTo(x2, y2);
+                    mapCtx.stroke();
+                }
+            }
+
+            // Waypoints
+            _mapWaypoints.forEach(wp => {
+                const {cx, cy} = toCanvas(wp.latitude, wp.longitude);
+                mapCtx.beginPath();
+                mapCtx.arc(cx, cy, wp.active ? 8 : 6, 0, Math.PI*2);
+                mapCtx.fillStyle = wp.active ? '#4f4' : '#4a90d9';
+                mapCtx.fill();
+                mapCtx.strokeStyle = '#fff';
+                mapCtx.lineWidth = 1;
+                mapCtx.stroke();
+                mapCtx.fillStyle = '#fff';
+                mapCtx.font = '9px monospace';
+                mapCtx.textAlign = 'center';
+                mapCtx.fillText(wp.label, cx, cy - 11);
+            });
+
+            // Raw GPS position: orange circle (shows jitter amplitude)
+            if (_mapRawPos) {
+                const {cx, cy} = toCanvas(_mapRawPos.lat, _mapRawPos.lon);
+                mapCtx.beginPath();
+                mapCtx.arc(cx, cy, 4, 0, Math.PI*2);
+                mapCtx.fillStyle = '#f93';
+                mapCtx.fill();
+                mapCtx.strokeStyle = 'rgba(255,255,255,0.4)';
+                mapCtx.lineWidth = 1;
+                mapCtx.stroke();
+            }
+
+            // Averaged GPS position: white triangle (what the pilot actually uses)
+            if (_mapCurrentPos) {
+                const {cx, cy} = toCanvas(_mapCurrentPos.lat, _mapCurrentPos.lon);
+                const headRad = (_mapCurrentPos.heading || 0) * Math.PI / 180;
+                mapCtx.save();
+                mapCtx.translate(cx, cy);
+                mapCtx.rotate(headRad);
+                mapCtx.beginPath();
+                mapCtx.moveTo(0, -9);
+                mapCtx.lineTo(6, 7);
+                mapCtx.lineTo(0, 3);
+                mapCtx.lineTo(-6, 7);
+                mapCtx.closePath();
+                mapCtx.fillStyle = '#fff';
+                mapCtx.fill();
+                mapCtx.restore();
+            }
+
+            const nWP = _mapWaypoints.length;
+            let posStr = 'GPS: no fix';
+            if (_mapCurrentPos) {
+                // Jitter: distance between raw and averaged position
+                let jitterStr = '';
+                if (_mapRawPos) {
+                    const cosL = Math.cos(_mapCurrentPos.lat * Math.PI / 180);
+                    const dLat = (_mapRawPos.lat - _mapCurrentPos.lat) * 111320;
+                    const dLon = (_mapRawPos.lon - _mapCurrentPos.lon) * cosL * 111320;
+                    jitterStr = ` \u0394${Math.sqrt(dLat*dLat + dLon*dLon).toFixed(1)}m`;
+                }
+                // Distance and bearing from averaged position to active waypoint
+                let distStr = '';
+                const activeWP = _mapWaypoints.find(w => w.active);
+                if (activeWP) {
+                    const R = 6371000;
+                    const lat1r = _mapCurrentPos.lat * Math.PI/180;
+                    const lat2r = activeWP.latitude  * Math.PI/180;
+                    const dLatR = (activeWP.latitude  - _mapCurrentPos.lat) * Math.PI/180;
+                    const dLonR = (activeWP.longitude - _mapCurrentPos.lon) * Math.PI/180;
+                    const a = Math.sin(dLatR/2)**2 + Math.cos(lat1r)*Math.cos(lat2r)*Math.sin(dLonR/2)**2;
+                    const distM = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    // Bearing to active WP
+                    const y = Math.sin(dLonR) * Math.cos(lat2r);
+                    const x = Math.cos(lat1r)*Math.sin(lat2r) - Math.sin(lat1r)*Math.cos(lat2r)*Math.cos(dLonR);
+                    const brg = ((Math.atan2(y, x) * 180/Math.PI) + 360) % 360;
+                    distStr = ` | cap ${brg.toFixed(0)}\u00b0 dist ${distM.toFixed(1)}m`;
+                }
+                posStr = `${_mapCurrentPos.lat.toFixed(5)}, ${_mapCurrentPos.lon.toFixed(5)}${jitterStr}${distStr}`;
+            }
+            document.getElementById('mapInfo').textContent = `${nWP} WP | ${posStr}`;
+        }
+
+        drawMap(); // Initial empty draw
+
         /* ===== Patrol controls ===== */
         async function recordWaypoint() {
+            const t = document.getElementById('toast');
+            // Progressive countdown while waiting for server (10s)
+            const steps = [
+                [0,    'Début enregistrement GPS... (10s)'],
+                [3500, '6 secondes restantes...'],
+                [6500, '3 secondes restantes...'],
+                [8500, 'Finalisation...'],
+            ];
+            let timers = [];
+            steps.forEach(([delay, msg]) => {
+                timers.push(setTimeout(() => {
+                    t.textContent = msg;
+                    t.className = 'toast success show';
+                    // Keep each step visible until the next one
+                }, delay));
+            });
             try {
                 const res = await fetch('/api/waypoints/record', {method: 'POST'});
+                timers.forEach(id => clearTimeout(id));
                 const data = await res.json();
-                if (res.ok) { refreshWaypoints(); showToast('Position enregistree', 'success'); }
-                else showToast(data.message || 'Erreur', 'error');
-            } catch(e) { showToast('Connexion perdue', 'error'); }
+                if (res.ok) {
+                    refreshWaypoints();
+                    showToast(`Position enregistrée (${data.samples} mesures)`, 'success', 5000);
+                } else {
+                    showToast(data.message || 'Erreur', 'error');
+                }
+            } catch(e) {
+                timers.forEach(id => clearTimeout(id));
+                showToast('Connexion perdue', 'error');
+            }
         }
         async function deleteLastWaypoint() {
             try {
@@ -455,6 +727,8 @@ HTML_TEMPLATE = """
                 const res = await fetch('/api/waypoints');
                 if (!res.ok) return;
                 const data = await res.json();
+                _mapWaypoints = data.waypoints || [];
+                drawMap();
                 const list = document.getElementById('waypointList');
                 list.textContent = '';
                 if (!data.waypoints || data.waypoints.length === 0) {
@@ -492,6 +766,12 @@ HTML_TEMPLATE = """
                 const badge = document.getElementById('modeBadge');
                 const statusEl = document.getElementById('patrolStatus');
 
+                // Debug nav line: always built when dbg values present
+                const hasDbg = s.dbg_bearing !== undefined;
+                const dbgLine = hasDbg
+                    ? `hdg ${s.dbg_avg_heading}\u00b0 \u2192 cap ${s.dbg_bearing}\u00b0 err ${s.dbg_heading_error}\u00b0 \u03c9${s.dbg_omega} v${s.dbg_speed}m/s`
+                    : '';
+
                 if (s.state === 'IDLE') {
                     badge.textContent = 'MANUEL';
                     badge.className = 'mode-badge manual';
@@ -499,15 +779,16 @@ HTML_TEMPLATE = """
                 } else if (s.state === 'NAVIGATING') {
                     badge.textContent = 'PATROUILLE';
                     badge.className = 'mode-badge patrol';
-                    statusEl.textContent = `WP ${s.waypoint_index+1}/${s.waypoint_count} | dist: ${s.distance_m ? s.distance_m+'m' : '--'} | cap: ${s.bearing ? s.bearing+'deg' : '--'}`;
+                    const line1 = `WP ${s.waypoint_index+1}/${s.waypoint_count} | dist: ${s.distance_m ? s.distance_m+'m' : '--'}`;
+                    statusEl.textContent = dbgLine ? `${line1}\n${dbgLine}` : line1;
                 } else if (s.state === 'AVOIDING') {
                     badge.textContent = 'EVITEMENT';
                     badge.className = 'mode-badge avoiding';
-                    statusEl.textContent = `Evitement obstacle - WP ${s.waypoint_index+1}/${s.waypoint_count}`;
+                    statusEl.textContent = `Évitement obstacle - WP ${s.waypoint_index+1}/${s.waypoint_count}`;
                 } else if (s.state === 'PATROL_COMPLETE') {
                     badge.textContent = 'TERMINE';
                     badge.className = 'mode-badge manual';
-                    statusEl.textContent = 'Patrouille terminee';
+                    statusEl.textContent = 'Patrouille terminée';
                 } else {
                     badge.textContent = s.state;
                     badge.className = 'mode-badge manual';
@@ -522,6 +803,9 @@ HTML_TEMPLATE = """
                 .then(() => showToast("Extinction en cours... Vous pouvez couper l'alimentation dans 10s.", 'success', 8000))
                 .catch(() => showToast("Erreur lors de l'extinction", 'error'));
         });
+
+        // Heartbeat: send current joystick state every 200ms to feed the watchdog
+        setInterval(sendCommand, 200);
 
         // Initial load
         refreshWaypoints();
@@ -553,6 +837,8 @@ class WebServer:
         self._patrol_file = patrol_file
         self._thread = None
         self._running = False
+        self._last_move_time = 0.0
+        self._watchdog_interval = 0.5  # seconds: stop motors if no command received
         self._auth_username = auth_username
         self._auth_password_hash = auth_password_hash
         self._ssl_context = (ssl_cert, ssl_key) if ssl_cert and ssl_key else None
@@ -603,9 +889,14 @@ class WebServer:
                 vy = max(-1.0, min(1.0, float(data.get('vy', 0))))
                 omega = max(-1.0, min(1.0, float(data.get('omega', 0))))
                 speed = max(0, min(100, int(data.get('speed', 50))))
+                self._last_move_time = time.time()
 
                 motors = None
-                if self.motor_controller:
+                pilot_active = (
+                    self.pilot and
+                    self.pilot.get_status().get('state') not in ('IDLE',)
+                )
+                if self.motor_controller and not pilot_active:
                     self.motor_controller.move(vx, vy, omega, speed)
                     motors = self.motor_controller.get_status()
 
@@ -623,11 +914,16 @@ class WebServer:
 
         @self.app.route('/api/status')
         def api_status():
+            uart_ok = False
+            if self.sensor_receiver:
+                data = self.sensor_receiver.get_last_data()
+                uart_ok = data is not None and (time.time() - data.timestamp) < 3.0
             return jsonify({
                 'motors_connected': self.motor_controller is not None,
                 'sensors_connected': self.sensor_receiver is not None,
                 'lidar_connected': self.lidar_scanner is not None,
                 'patrol_available': self.patrol_manager is not None,
+                'uart_ok': uart_ok,
             })
 
         @self.app.route('/api/stop', methods=['POST'])
@@ -683,7 +979,7 @@ class WebServer:
             # Average N GPS readings to reduce position error
             import time
             GPS_SAMPLES = 10
-            GPS_INTERVAL = 0.1  # 10 Hz
+            GPS_INTERVAL = 1.0  # 1 Hz — real GPS update rate
             lats, lons = [], []
             for _ in range(GPS_SAMPLES):
                 d = self.sensor_receiver.get_last_data()
@@ -755,6 +1051,8 @@ class WebServer:
             if not self.pilot:
                 return jsonify({'status': 'error'}), 400
             self.pilot.stop()
+            if self.motor_controller:
+                self.motor_controller.stop()
             return jsonify({'status': 'ok'})
 
         @self.app.route('/api/patrol/status')
@@ -762,6 +1060,21 @@ class WebServer:
             if not self.pilot:
                 return jsonify({'state': 'IDLE', 'waypoint_index': 0, 'waypoint_count': 0})
             return jsonify(self.pilot.get_status())
+
+    def _watchdog_loop(self):
+        """Stop motors if no move command received for watchdog_interval seconds (manual mode only)."""
+        while self._running:
+            time.sleep(0.1)
+            if not self.motor_controller:
+                continue
+            pilot_is_active = (
+                self.pilot and
+                self.pilot.get_status().get('state') not in ('IDLE',)
+            )
+            if pilot_is_active:
+                continue
+            if time.time() - self._last_move_time > self._watchdog_interval:
+                self.motor_controller.stop()
 
     def start(self, threaded=True):
         local_ip = get_local_ip()
@@ -778,6 +1091,7 @@ class WebServer:
                 daemon=True
             )
             self._thread.start()
+            threading.Thread(target=self._watchdog_loop, daemon=True).start()
             print(f"Serveur web: {url}")
         else:
             print(f"Serveur web: {url}")

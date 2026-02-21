@@ -29,7 +29,7 @@ class PatrolManager:
       - Bearing and distance calculation (haversine)
     """
 
-    def __init__(self, waypoint_radius: float = 3.0):
+    def __init__(self, waypoint_radius: float = 4.0):
         """
         Args:
             waypoint_radius: Distance in meters to consider a waypoint reached.
@@ -37,13 +37,16 @@ class PatrolManager:
         self._waypoints: list[Waypoint] = []
         self._current_index: int = 0
         self.waypoint_radius = waypoint_radius
+        # Monotonic counter for unique labels — survives deletions
+        self._wp_counter: int = 0
 
     # --- CRUD waypoints ---
 
     def record_waypoint(self, lat: float, lon: float, label: str = "") -> int:
         """Records a new waypoint. Returns its index."""
         if not label:
-            label = f"WP{len(self._waypoints)}"
+            label = f"WP{self._wp_counter}"
+        self._wp_counter += 1
         wp = Waypoint(latitude=lat, longitude=lon, label=label)
         self._waypoints.append(wp)
         return len(self._waypoints) - 1
@@ -54,6 +57,8 @@ class PatrolManager:
             self._waypoints.pop(index)
             if self._current_index >= len(self._waypoints):
                 self._current_index = max(0, len(self._waypoints) - 1)
+            if not self._waypoints:
+                self._wp_counter = 0  # reset so next WP starts at WP0
             return True
         return False
 
@@ -149,6 +154,7 @@ class PatrolManager:
         data = {
             "waypoints": [asdict(wp) for wp in self._waypoints],
             "waypoint_radius": self.waypoint_radius,
+            "wp_counter": self._wp_counter,
         }
         os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
         with open(filepath, "w") as f:
@@ -165,6 +171,7 @@ class PatrolManager:
         ]
         if "waypoint_radius" in data:
             self.waypoint_radius = data["waypoint_radius"]
+        self._wp_counter = data.get("wp_counter", len(self._waypoints))
         self._current_index = 0
         return True
 
