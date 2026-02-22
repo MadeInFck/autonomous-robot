@@ -284,8 +284,8 @@ def main():
                         help='Desactiver le LiDAR')
     parser.add_argument('--no-camera', action='store_true',
                         help='Désactiver la caméra IA')
-    parser.add_argument('--camera-conf', type=float, default=0.35,
-                        help='Seuil de confiance caméra (défaut: 0.35)')
+    parser.add_argument('--camera-conf', type=float, default=0.50,
+                        help='Seuil de confiance caméra (défaut: 0.50)')
     parser.add_argument('--lidar-port', type=str, default=LIDAR_PORT,
                         help=f'Port LiDAR (defaut: {LIDAR_PORT})')
     parser.add_argument('--port', type=int, default=WEB_PORT,

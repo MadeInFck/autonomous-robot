@@ -17,7 +17,7 @@ except ImportError:
     _CV2_OK = False
 
 MODEL_PATH = '/usr/share/imx500-models/imx500_network_efficientdet_lite0_pp.rpk'
-CONF_THRESHOLD = 0.35
+CONF_THRESHOLD = 0.50
 MAX_HISTORY = 20
 ALERT_COOLDOWN_S = 5.0  # same label won't re-trigger an alert within this window
 

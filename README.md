@@ -13,7 +13,9 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 │ • IMU I2C1 (BMI160/BNO085)  │◄─UART3─►│ • Omnidirectional control    │
 │ • Sensor acquisition 10Hz   │         │ • Flask web server (WiFi)    │
 │ • TX: GP0, RX: GP1          │         │ • TX: GPIO8, RX: GPIO9       │
-└─────────────────────────────┘         └──────────────────────────────┘
+└─────────────────────────────┘         │ • Raspberry Pi AI Camera     │
+                                         │   (IMX500, on-chip inference)│
+                                         └──────────────────────────────┘
                                                      │
                                                      ▼
                                         ┌──────────────────────────────┐
@@ -32,6 +34,7 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 - **Speed Control**: Adjustable from 30% to 100% from the interface
 - **Autonomous Navigation**: GPS waypoint patrol with obstacle avoidance (LiDAR)
 - **LiDAR RPLidar C1**: 360° scan, obstacle detection, occupancy grid
+- **AI Camera (IMX500)**: EfficientDet Lite0 on-chip inference — person/animal detection with toast alerts, live MJPEG stream
 - **Security**: HTTP Basic Auth (scrypt), optional TLS/HTTPS
 
 ## Wiring
@@ -152,6 +155,8 @@ Options:
 - `--no-motors`: Disable motors (sensor testing only)
 - `--no-sensors`: Disable UART reception (motor testing only)
 - `--no-lidar`: Disable LiDAR
+- `--no-camera`: Disable the AI camera
+- `--camera-conf 0.50`: Detection confidence threshold (default: 0.50)
 - `--lidar-port /dev/ttyUSB0`: LiDAR serial port (default: `/dev/ttyUSB0`)
 - `--port 8085`: Web server port (default: 8085)
 - `--no-auth`: Disable authentication (dev/debug only)
@@ -247,8 +252,10 @@ autonomous-robot/
 │   │   ├── patrol_manager.py      # GPS waypoint management
 │   │   ├── obstacle_avoider.py    # LiDAR obstacle avoidance
 │   │   └── pilot.py               # Autonomous pilot (GPS + LiDAR)
+│   ├── camera/
+│   │   └── ai_camera.py           # IMX500 AI camera — EfficientDet Lite0 background thread
 │   ├── telemetry/
-│   │   └── web_server.py          # Flask server + joystick + LiDAR + patrol
+│   │   └── web_server.py          # Flask server + joystick + LiDAR + patrol + camera
 │   └── tests/                     # Unit tests
 └── scripts/
     └── setup_pi5_env.sh           # Pi5 setup script
@@ -299,6 +306,8 @@ The Flask server exposes the following endpoints:
 | POST    | `/api/patrol/start`   | Start autonomous patrol              |
 | POST    | `/api/patrol/stop`    | Stop patrol                          |
 | GET     | `/api/patrol/status`  | Patrol status                        |
+| GET     | `/api/detections`     | Recent AI camera detections (60 s)   |
+| GET     | `/api/stream`         | Live MJPEG video stream              |
 
 ### POST `/api/move`
 
@@ -326,6 +335,25 @@ The Flask server exposes the following endpoints:
 }
 ```
 
+### GET `/api/detections`
+
+```json
+{
+  "camera_ok": true,
+  "detections": [
+    {"label": "person", "confidence": 0.87, "timestamp": 1700000000.0, "age_s": 1.2, "is_alert": true},
+    {"label": "dog",    "confidence": 0.63, "timestamp": 1700000000.0, "age_s": 1.2, "is_alert": false}
+  ]
+}
+```
+
+`is_alert: true` on the first occurrence of an alert label within the 5-second cooldown window.
+Alert labels: `person`, `cat`, `dog`, `horse`, `sheep`, `cow`, `bear`, `zebra`, `giraffe`.
+
+### GET `/api/stream`
+
+Multipart MJPEG stream (`multipart/x-mixed-replace`). Can be used as an `<img>` src directly.
+
 ## Mecanum Kinematics
 
 ```
@@ -351,7 +379,7 @@ Speeds are normalized by the maximum value to prevent saturation.
 - [ ] Integrate BNO085 into `pico/main.py` (module on order) — replaces GPS COG for heading
 - [ ] Test autonomous patrol (GPS waypoint following, stop, mode switching)
 - [ ] Test LiDAR obstacle avoidance (real-world scenarios: static obstacles, passing distance, avoidance recovery)
-- [ ] Integrate Raspberry Pi AI Camera (intelligent obstacle/person/animal detection)
+- [x] Integrate Raspberry Pi AI Camera (IMX500 / EfficientDet Lite0 — person/animal detection, toast alerts, MJPEG stream)
 - [ ] Push notifications + siren on intrusion detection
 - [ ] Create a native iOS app mirroring the existing web interface
 

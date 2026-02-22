@@ -277,7 +277,7 @@ HTML_TEMPLATE = """
     <div class="stream-modal" id="streamModal" onclick="if(event.target===this)closeStream()">
         <div class="stream-modal-inner">
             <button class="stream-close" onclick="closeStream()">&#x2715;</button>
-            <img id="streamImg" src="" alt="flux caméra" style="transform: rotate(180deg)">
+            <img id="streamImg" src="" alt="flux caméra">
         </div>
     </div>
 
