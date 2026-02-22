@@ -116,14 +116,24 @@ class AiCamera:
 
     def pause(self):
         """Pause detection and streaming.
-        picam2 pipeline keeps running to avoid breaking IMX500 inference on resume."""
+        Drops frame rate to 1fps to reduce IMX500 NNA load (~93% reduction)
+        without stopping the pipeline (stop/start breaks inference — model
+        upload on start() takes 10-30s and get_outputs() returns None until done)."""
         self._paused = True
         with self._lock:
             self._latest_jpeg = b''
             self._history = []
+        try:
+            self._picam2.set_controls({"FrameRate": 1})
+        except Exception:
+            pass
 
     def resume(self):
-        """Resume detection and streaming."""
+        """Resume detection and streaming at full frame rate."""
+        try:
+            self._picam2.set_controls({"FrameRate": 15})
+        except Exception:
+            pass
         self._paused = False
 
     def is_paused(self) -> bool:
