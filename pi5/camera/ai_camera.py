@@ -12,9 +12,8 @@ from typing import List
 
 try:
     import cv2
-    _CV2_OK = True
 except ImportError:
-    _CV2_OK = False
+    cv2 = None  # type: ignore[assignment]
 
 MODEL_PATH = '/usr/share/imx500-models/imx500_network_efficientdet_lite0_pp.rpk'
 CONF_THRESHOLD = 0.50
@@ -116,23 +115,15 @@ class AiCamera:
                 pass
 
     def pause(self):
-        """Stop the camera sensor (real power saving — IMX500 goes idle).
-        The network model stays loaded on-chip; resume() restarts in <1s."""
+        """Pause detection and streaming.
+        picam2 pipeline keeps running to avoid breaking IMX500 inference on resume."""
         self._paused = True
         with self._lock:
             self._latest_jpeg = b''
             self._history = []
-        try:
-            self._picam2.stop()
-        except Exception:
-            pass
 
     def resume(self):
-        """Restart the camera sensor and resume detection."""
-        try:
-            self._picam2.start()
-        except Exception:
-            pass
+        """Resume detection and streaming."""
         self._paused = False
 
     def is_paused(self) -> bool:
@@ -148,21 +139,41 @@ class AiCamera:
                 metadata = self._picam2.capture_metadata()
                 outputs = self._imx500.get_outputs(metadata)
 
-                # Encode frame to JPEG for streaming (raw, orientation handled client-side)
-                if _CV2_OK:
+                raw = self._parse_raw(outputs) if outputs is not None else []
+
+                # Encode frame to JPEG, drawing bounding boxes if detections exist
+                if cv2 is not None:
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    h_frame, w_frame = frame_bgr.shape[:2]
+                    for label, conf, box in raw:
+                        try:
+                            y1, x1, y2, x2 = box
+                            coords = self._imx500.convert_inference_coords(
+                                (x1, y1, x2 - x1, y2 - y1), metadata, self._picam2)
+                            rx, ry = int(coords.x), int(coords.y)
+                            rw, rh = int(coords.width), int(coords.height)
+                        except Exception:
+                            # Fallback: scale from model input (320×320) to frame dims
+                            y1, x1, y2, x2 = box
+                            rx = int(x1 * w_frame / 320)
+                            ry = int(y1 * h_frame / 320)
+                            rw = int((x2 - x1) * w_frame / 320)
+                            rh = int((y2 - y1) * h_frame / 320)
+                        color = (0, 80, 255) if label in ALERT_LABELS else (0, 220, 80)
+                        cv2.rectangle(frame_bgr, (rx, ry), (rx + rw, ry + rh), color, 2)
+                        cv2.putText(frame_bgr, f"{label} {int(conf * 100)}%",
+                                    (rx, max(ry - 6, 12)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
                     _, buf = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
                     jpeg_bytes = buf.tobytes()
                 else:
                     jpeg_bytes = b''
 
-                raw = self._parse_raw(outputs) if outputs is not None else []
-
                 with self._lock:
                     self._latest_jpeg = jpeg_bytes
                     now = time.time()
                     new_detections = []
-                    for label, conf in raw:
+                    for label, conf, _ in raw:
                         last = self._last_alert_time.get(label, 0)
                         is_alert = (label in ALERT_LABELS) and (now - last >= ALERT_COOLDOWN_S)
                         if is_alert:
