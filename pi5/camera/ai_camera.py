@@ -78,6 +78,7 @@ class AiCamera:
         self._latest_jpeg: bytes = b''        # last encoded JPEG frame for streaming
         self._running = False
         self._paused = False
+        self._resuming = False  # True between resume() and first valid inference output
         self._thread = None
         self._error = False
         self._last_alert_time: dict = {}       # label -> timestamp of last alert
@@ -115,29 +116,34 @@ class AiCamera:
                 pass
 
     def pause(self):
-        """Pause detection and streaming.
-        Drops frame rate to 1fps to reduce IMX500 NNA load (~93% reduction)
-        without stopping the pipeline (stop/start breaks inference — model
-        upload on start() takes 10-30s and get_outputs() returns None until done)."""
+        """Stop the camera pipeline for real power saving (~1.5-2 W).
+        Resume with resume() — model reload onto the IMX500 takes 10-30 s;
+        is_starting() returns True until the first inference output arrives."""
         self._paused = True
         with self._lock:
             self._latest_jpeg = b''
             self._history = []
         try:
-            self._picam2.set_controls({"FrameRate": 1})
+            self._picam2.stop()
         except Exception:
             pass
 
     def resume(self):
-        """Resume detection and streaming at full frame rate."""
+        """Restart the camera pipeline after pause().
+        is_starting() returns True until the IMX500 model finishes uploading."""
+        self._resuming = True
         try:
-            self._picam2.set_controls({"FrameRate": 15})
+            self._picam2.start()
         except Exception:
-            pass
+            self._resuming = False
         self._paused = False
 
     def is_paused(self) -> bool:
         return self._paused
+
+    def is_starting(self) -> bool:
+        """True between resume() and the first valid inference output (10-30 s)."""
+        return self._resuming
 
     def _loop(self):
         while self._running:
@@ -148,6 +154,10 @@ class AiCamera:
                 frame = self._picam2.capture_array()
                 metadata = self._picam2.capture_metadata()
                 outputs = self._imx500.get_outputs(metadata)
+
+                # Clear _resuming as soon as the first valid inference output arrives
+                if outputs is not None and self._resuming:
+                    self._resuming = False
 
                 raw = self._parse_raw(outputs) if outputs is not None else []
 
@@ -203,7 +213,7 @@ class AiCamera:
                 pass   # silently skip errors between frames
 
     def _parse_raw(self, outputs) -> List[tuple]:
-        """Extract (label, confidence) pairs from one frame's inference outputs."""
+        """Extract (label, confidence, box) tuples from one frame's inference outputs."""
         boxes   = outputs[0]
         scores  = outputs[1]
         classes = outputs[2]
@@ -220,7 +230,7 @@ class AiCamera:
                 continue
             # Keep only the highest-confidence detection per label per frame
             if label not in seen_labels:
-                result.append((label, round(conf, 2)))
+                result.append((label, round(conf, 2), boxes[i]))
                 seen_labels.add(label)
 
         return result

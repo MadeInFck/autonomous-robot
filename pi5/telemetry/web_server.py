@@ -129,6 +129,9 @@ HTML_TEMPLATE = """
         .stream-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .cam-toggle-btn { margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); color: #fff; font-size: 0.68em; cursor: pointer; touch-action: manipulation; }
         .cam-toggle-btn.paused { border-color: rgba(74,153,120,0.7); color: #4a9978; }
+        .cam-toggle-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        @keyframes cam-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+        .status-dot.starting { background: #f0a500; animation: cam-pulse 1.2s ease-in-out infinite; }
         /* Stream modal */
         .stream-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; }
         .stream-modal.open { display: flex; }
@@ -847,19 +850,28 @@ HTML_TEMPLATE = """
         const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
 
-        function _updateToggleBtn(paused) {
+        function _updateToggleBtn(paused, starting) {
             const btn = document.getElementById('camToggleBtn');
             if (!btn) return;
-            btn.textContent = paused ? '▶ Allumer' : '⏸ Couper';
-            btn.classList.toggle('paused', paused);
+            if (starting) {
+                btn.textContent = '⏳ Démarrage…';
+                btn.classList.remove('paused');
+                btn.disabled = true;
+            } else {
+                btn.textContent = paused ? '▶ Allumer' : '⏸ Couper';
+                btn.classList.toggle('paused', paused);
+                btn.disabled = false;
+            }
         }
 
         async function toggleCamera() {
             try {
+                const btn = document.getElementById('camToggleBtn');
+                if (btn) { btn.disabled = true; btn.textContent = '…'; }
                 const res = await fetch('/api/camera/toggle', {method: 'POST'});
                 if (!res.ok) return;
                 const data = await res.json();
-                _updateToggleBtn(data.paused);
+                _updateToggleBtn(data.paused, false);
                 if (data.paused) closeStream();
             } catch(e) {}
         }
@@ -870,9 +882,11 @@ HTML_TEMPLATE = """
                 if (!res.ok) return;
                 const data = await res.json();
 
-                document.getElementById('cameraDot').classList.toggle('connected', data.camera_ok && !data.paused);
-                _updateToggleBtn(data.paused);
-                document.querySelector('.stream-btn').disabled = data.paused;
+                const dot = document.getElementById('cameraDot');
+                dot.classList.toggle('connected', data.camera_ok && !data.paused && !data.starting);
+                dot.classList.toggle('starting', !!data.starting);
+                _updateToggleBtn(data.paused, data.starting);
+                document.querySelector('.stream-btn').disabled = data.paused || data.starting;
 
                 const dets = data.detections || [];
 
@@ -880,6 +894,13 @@ HTML_TEMPLATE = """
                     document.getElementById('detectionSection').classList.remove('active-alert');
                     document.getElementById('detectionList').textContent = 'Caméra en pause';
                     document.getElementById('cameraStatus').textContent = 'En pause';
+                    return;
+                }
+
+                if (data.starting) {
+                    document.getElementById('detectionSection').classList.remove('active-alert');
+                    document.getElementById('detectionList').textContent = 'Chargement du modèle IA…';
+                    document.getElementById('cameraStatus').textContent = 'Démarrage (10-30 s)';
                     return;
                 }
 
@@ -1054,11 +1075,12 @@ class WebServer:
         @self.app.route('/api/detections')
         def api_detections():
             if not self.camera:
-                return jsonify({'detections': [], 'camera_ok': False, 'paused': False})
+                return jsonify({'detections': [], 'camera_ok': False, 'paused': False, 'starting': False})
             return jsonify({
                 'detections': self.camera.get_recent_detections(max_age_s=60.0),
                 'camera_ok': not self.camera.has_error(),
                 'paused': self.camera.is_paused(),
+                'starting': self.camera.is_starting(),
             })
 
         @self.app.route('/api/camera/toggle', methods=['POST'])
