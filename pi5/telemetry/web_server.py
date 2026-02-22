@@ -126,6 +126,8 @@ HTML_TEMPLATE = """
         .detection-item.alert { background: rgba(233,69,96,0.25); border-left: 2px solid #e94560; }
         .stream-btn { display: block; width: 100%; margin: 6px 0; padding: 5px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.75em; cursor: pointer; touch-action: manipulation; text-align: center; }
         .stream-btn:active { background: rgba(255,255,255,0.25); }
+        .cam-toggle-btn { margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); color: #fff; font-size: 0.68em; cursor: pointer; touch-action: manipulation; }
+        .cam-toggle-btn.paused { border-color: rgba(74,153,120,0.7); color: #4a9978; }
         /* Stream modal */
         .stream-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; }
         .stream-modal.open { display: flex; }
@@ -268,6 +270,7 @@ HTML_TEMPLATE = """
         <div class="camera-status">
             <span class="status-dot" id="cameraDot"></span>
             <span id="cameraStatus">--</span>
+            <button class="cam-toggle-btn" id="camToggleBtn" onclick="toggleCamera()">&#9646;&#9646; Couper</button>
         </div>
         <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         <div class="detection-list" id="detectionList">Aucune détection</div>
@@ -842,15 +845,41 @@ HTML_TEMPLATE = """
         /* ===== Camera AI detections polling ===== */
         const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
+
+        function _updateToggleBtn(paused) {
+            const btn = document.getElementById('camToggleBtn');
+            if (!btn) return;
+            btn.textContent = paused ? '▶ Allumer' : '⏸ Couper';
+            btn.classList.toggle('paused', paused);
+        }
+
+        async function toggleCamera() {
+            try {
+                const res = await fetch('/api/camera/toggle', {method: 'POST'});
+                if (!res.ok) return;
+                const data = await res.json();
+                _updateToggleBtn(data.paused);
+                if (data.paused) closeStream();
+            } catch(e) {}
+        }
+
         setInterval(async () => {
             try {
                 const res = await fetch('/api/detections');
                 if (!res.ok) return;
                 const data = await res.json();
 
-                document.getElementById('cameraDot').classList.toggle('connected', data.camera_ok);
+                document.getElementById('cameraDot').classList.toggle('connected', data.camera_ok && !data.paused);
+                _updateToggleBtn(data.paused);
 
                 const dets = data.detections || [];
+
+                if (data.paused) {
+                    document.getElementById('detectionSection').classList.remove('active-alert');
+                    document.getElementById('detectionList').textContent = 'Caméra en pause';
+                    document.getElementById('cameraStatus').textContent = 'En pause';
+                    return;
+                }
 
                 // Toast for new alerts since last poll
                 const newAlerts = dets.filter(d => d.is_alert && d.timestamp > _lastDetectionTs);
@@ -1023,11 +1052,22 @@ class WebServer:
         @self.app.route('/api/detections')
         def api_detections():
             if not self.camera:
-                return jsonify({'detections': [], 'camera_ok': False})
+                return jsonify({'detections': [], 'camera_ok': False, 'paused': False})
             return jsonify({
                 'detections': self.camera.get_recent_detections(max_age_s=60.0),
                 'camera_ok': not self.camera.has_error(),
+                'paused': self.camera.is_paused(),
             })
+
+        @self.app.route('/api/camera/toggle', methods=['POST'])
+        def api_camera_toggle():
+            if not self.camera:
+                return jsonify({'error': 'no camera'}), 404
+            if self.camera.is_paused():
+                self.camera.resume()
+            else:
+                self.camera.pause()
+            return jsonify({'paused': self.camera.is_paused()})
 
         @self.app.route('/api/stream')
         def api_stream():

@@ -78,6 +78,7 @@ class AiCamera:
         self._history: List[Detection] = []   # most recent first, capped at MAX_HISTORY
         self._latest_jpeg: bytes = b''        # last encoded JPEG frame for streaming
         self._running = False
+        self._paused = False
         self._thread = None
         self._error = False
         self._last_alert_time: dict = {}       # label -> timestamp of last alert
@@ -114,12 +115,30 @@ class AiCamera:
             except Exception:
                 pass
 
+    def pause(self):
+        """Pause detection and streaming (picam2 keeps running)."""
+        self._paused = True
+        with self._lock:
+            self._latest_jpeg = b''
+            self._history = []
+
+    def resume(self):
+        """Resume detection and streaming."""
+        self._paused = False
+
+    def is_paused(self) -> bool:
+        return self._paused
+
     def _loop(self):
         while self._running:
             try:
-                # Capture frame array + metadata (matches test script pattern)
+                # Always drain the picam2 buffer to avoid stale frames on resume
                 frame = self._picam2.capture_array()
                 metadata = self._picam2.capture_metadata()
+
+                if self._paused:
+                    continue
+
                 outputs = self._imx500.get_outputs(metadata)
 
                 # Encode frame to JPEG for streaming (raw, orientation handled client-side)
