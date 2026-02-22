@@ -118,11 +118,20 @@ HTML_TEMPLATE = """
         .toast.success { background: rgba(74,153,120,0.9); color: #fff; }
 
         /* --- Camera AI detections --- */
-        .detection-section { padding: 8px 15px; background: rgba(0,0,0,0.15); }
-        .camera-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-bottom: 4px; }
+        .detection-section { padding: 8px 15px; background: rgba(0,0,0,0.15); transition: background 0.5s, border-left 0.5s; }
+        .detection-section.active-alert { background: rgba(233,69,96,0.12); border-left: 3px solid #e94560; }
+        .camera-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
         .detection-list { font-size: 0.7em; font-family: monospace; max-height: 140px; overflow-y: auto; }
         .detection-item { padding: 3px 6px; border-radius: 3px; margin: 2px 0; }
         .detection-item.alert { background: rgba(233,69,96,0.25); border-left: 2px solid #e94560; }
+        .stream-btn { padding: 4px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.75em; cursor: pointer; touch-action: manipulation; }
+        .stream-btn:active { background: rgba(255,255,255,0.25); }
+        /* Stream modal */
+        .stream-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; }
+        .stream-modal.open { display: flex; }
+        .stream-modal-inner { position: relative; max-width: 100%; max-height: 100%; text-align: center; }
+        .stream-modal img { max-width: 100%; max-height: 90vh; object-fit: contain; border-radius: 6px; }
+        .stream-close { position: absolute; top: -32px; right: 0; background: none; border: none; color: #fff; font-size: 1.6em; cursor: pointer; line-height: 1; }
 
         @media (min-width: 500px) {
             .joystick-container { width: 160px; height: 160px; }
@@ -255,12 +264,21 @@ HTML_TEMPLATE = """
 
     <!-- Camera AI detections section -->
     <div class="section-title">Caméra IA</div>
-    <div class="detection-section">
+    <div class="detection-section" id="detectionSection">
         <div class="camera-status">
             <span class="status-dot" id="cameraDot"></span>
             <span id="cameraStatus">--</span>
+            <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         </div>
         <div class="detection-list" id="detectionList">Aucune détection</div>
+    </div>
+
+    <!-- Stream modal -->
+    <div class="stream-modal" id="streamModal" onclick="if(event.target===this)closeStream()">
+        <div class="stream-modal-inner">
+            <button class="stream-close" onclick="closeStream()">&#x2715;</button>
+            <img id="streamImg" src="" alt="flux caméra">
+        </div>
     </div>
 
     <div class="shutdown-section">
@@ -822,6 +840,7 @@ HTML_TEMPLATE = """
         });
 
         /* ===== Camera AI detections polling ===== */
+        const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
         setInterval(async () => {
             try {
@@ -843,6 +862,10 @@ HTML_TEMPLATE = """
                     _lastDetectionTs = Math.max(...dets.map(d => d.timestamp));
                 }
 
+                // Persistent red background while a person/animal was seen in the last 15s
+                const hasRecentAlert = dets.some(d => _alertLabels.has(d.label) && d.age_s <= 15);
+                document.getElementById('detectionSection').classList.toggle('active-alert', hasRecentAlert);
+
                 const list = document.getElementById('detectionList');
                 if (dets.length === 0) {
                     list.textContent = 'Aucune détection (60s)';
@@ -861,6 +884,16 @@ HTML_TEMPLATE = """
                 document.getElementById('cameraStatus').textContent = dets.length + ' détection(s) (60s)';
             } catch(e) {}
         }, 2000);
+
+        /* ===== Stream modal ===== */
+        function openStream() {
+            document.getElementById('streamImg').src = '/api/stream';
+            document.getElementById('streamModal').classList.add('open');
+        }
+        function closeStream() {
+            document.getElementById('streamImg').src = '';  // stops the MJPEG connection
+            document.getElementById('streamModal').classList.remove('open');
+        }
 
         // Heartbeat: send current joystick state every 200ms to feed the watchdog
         setInterval(sendCommand, 200);
@@ -995,6 +1028,15 @@ class WebServer:
                 'detections': self.camera.get_recent_detections(max_age_s=60.0),
                 'camera_ok': not self.camera.has_error(),
             })
+
+        @self.app.route('/api/stream')
+        def api_stream():
+            if not self.camera or self.camera.has_error():
+                return Response('Camera non disponible', status=503)
+            return Response(
+                self.camera.generate_stream(),
+                mimetype='multipart/x-mixed-replace; boundary=frame',
+            )
 
         @self.app.route('/api/stop', methods=['POST'])
         def api_stop():

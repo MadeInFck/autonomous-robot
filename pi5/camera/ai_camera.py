@@ -10,6 +10,12 @@ import threading
 from dataclasses import dataclass
 from typing import List
 
+try:
+    import cv2
+    _CV2_OK = True
+except ImportError:
+    _CV2_OK = False
+
 MODEL_PATH = '/usr/share/imx500-models/imx500_network_efficientdet_lite0_pp.rpk'
 CONF_THRESHOLD = 0.35
 MAX_HISTORY = 20
@@ -39,9 +45,10 @@ COCO_LABELS = {
 }
 
 # Labels that trigger alert notifications
+# Note: 'bird' excluded — too many outdoor false positives
 ALERT_LABELS = {
     'person',
-    'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'bear', 'zebra', 'giraffe',
+    'cat', 'dog', 'horse', 'sheep', 'cow', 'bear', 'zebra', 'giraffe',
 }
 
 
@@ -69,6 +76,7 @@ class AiCamera:
         self._conf_threshold = conf_threshold
         self._lock = threading.Lock()
         self._history: List[Detection] = []   # most recent first, capped at MAX_HISTORY
+        self._latest_jpeg: bytes = b''        # last encoded JPEG frame for streaming
         self._running = False
         self._thread = None
         self._error = False
@@ -109,14 +117,23 @@ class AiCamera:
     def _loop(self):
         while self._running:
             try:
+                # Capture frame array + metadata (matches test script pattern)
+                frame = self._picam2.capture_array()
                 metadata = self._picam2.capture_metadata()
                 outputs = self._imx500.get_outputs(metadata)
-                if outputs is None:
-                    continue
 
-                raw = self._parse_raw(outputs)
+                # Encode frame to JPEG for streaming (flip 180° — camera mounted upside-down)
+                if _CV2_OK:
+                    frame_bgr = cv2.cvtColor(cv2.flip(frame, -1), cv2.COLOR_RGB2BGR)
+                    _, buf = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    jpeg_bytes = buf.tobytes()
+                else:
+                    jpeg_bytes = b''
+
+                raw = self._parse_raw(outputs) if outputs is not None else []
 
                 with self._lock:
+                    self._latest_jpeg = jpeg_bytes
                     now = time.time()
                     new_detections = []
                     for label, conf in raw:
@@ -136,7 +153,7 @@ class AiCamera:
                         self._history = self._history[:MAX_HISTORY]
 
             except Exception:
-                pass   # silently skip empty/invalid metadata between frames
+                pass   # silently skip errors between frames
 
     def _parse_raw(self, outputs) -> List[tuple]:
         """Extract (label, confidence) pairs from one frame's inference outputs."""
@@ -176,6 +193,23 @@ class AiCamera:
                 for d in self._history
                 if now - d.timestamp <= max_age_s
             ]
+
+    def get_latest_jpeg(self) -> bytes:
+        """Return the most recent JPEG-encoded camera frame (bytes)."""
+        with self._lock:
+            return self._latest_jpeg
+
+    def generate_stream(self):
+        """MJPEG generator for Flask streaming response."""
+        while True:
+            with self._lock:
+                frame = self._latest_jpeg
+            if frame:
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                )
+            time.sleep(0.05)   # ~20 fps max
 
     def has_error(self) -> bool:
         return self._error
