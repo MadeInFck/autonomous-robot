@@ -124,7 +124,7 @@ HTML_TEMPLATE = """
         .detection-list { font-size: 0.7em; font-family: monospace; max-height: 140px; overflow-y: auto; }
         .detection-item { padding: 3px 6px; border-radius: 3px; margin: 2px 0; }
         .detection-item.alert { background: rgba(233,69,96,0.25); border-left: 2px solid #e94560; }
-        .stream-btn { padding: 4px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.75em; cursor: pointer; touch-action: manipulation; }
+        .stream-btn { display: block; width: 100%; margin: 6px 0; padding: 5px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.75em; cursor: pointer; touch-action: manipulation; text-align: center; }
         .stream-btn:active { background: rgba(255,255,255,0.25); }
         /* Stream modal */
         .stream-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; }
@@ -268,8 +268,8 @@ HTML_TEMPLATE = """
         <div class="camera-status">
             <span class="status-dot" id="cameraDot"></span>
             <span id="cameraStatus">--</span>
-            <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         </div>
+        <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         <div class="detection-list" id="detectionList">Aucune détection</div>
     </div>
 
@@ -277,7 +277,7 @@ HTML_TEMPLATE = """
     <div class="stream-modal" id="streamModal" onclick="if(event.target===this)closeStream()">
         <div class="stream-modal-inner">
             <button class="stream-close" onclick="closeStream()">&#x2715;</button>
-            <img id="streamImg" src="" alt="flux caméra">
+            <img id="streamImg" src="" alt="flux caméra" style="transform: rotate(180deg)">
         </div>
     </div>
 

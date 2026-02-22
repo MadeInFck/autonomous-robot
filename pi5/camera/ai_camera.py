@@ -122,9 +122,9 @@ class AiCamera:
                 metadata = self._picam2.capture_metadata()
                 outputs = self._imx500.get_outputs(metadata)
 
-                # Encode frame to JPEG for streaming (flip 180° — camera mounted upside-down)
+                # Encode frame to JPEG for streaming (raw, orientation handled client-side)
                 if _CV2_OK:
-                    frame_bgr = cv2.cvtColor(cv2.flip(frame, -1), cv2.COLOR_RGB2BGR)
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     _, buf = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
                     jpeg_bytes = buf.tobytes()
                 else:
