@@ -117,6 +117,13 @@ HTML_TEMPLATE = """
         .toast.error { background: rgba(233,69,96,0.9); color: #fff; }
         .toast.success { background: rgba(74,153,120,0.9); color: #fff; }
 
+        /* --- Camera AI detections --- */
+        .detection-section { padding: 8px 15px; background: rgba(0,0,0,0.15); }
+        .camera-status { font-size: 0.7em; font-family: monospace; opacity: 0.8; margin-bottom: 4px; }
+        .detection-list { font-size: 0.7em; font-family: monospace; max-height: 140px; overflow-y: auto; }
+        .detection-item { padding: 3px 6px; border-radius: 3px; margin: 2px 0; }
+        .detection-item.alert { background: rgba(233,69,96,0.25); border-left: 2px solid #e94560; }
+
         @media (min-width: 500px) {
             .joystick-container { width: 160px; height: 160px; }
             .joystick-base { width: 160px; height: 160px; }
@@ -244,6 +251,16 @@ HTML_TEMPLATE = """
             <canvas id="lidarCanvas" width="200" height="200"></canvas>
         </div>
         <div class="lidar-info"><span id="lidarInfo">--</span></div>
+    </div>
+
+    <!-- Camera AI detections section -->
+    <div class="section-title">Caméra IA</div>
+    <div class="detection-section">
+        <div class="camera-status">
+            <span class="status-dot" id="cameraDot"></span>
+            <span id="cameraStatus">--</span>
+        </div>
+        <div class="detection-list" id="detectionList">Aucune détection</div>
     </div>
 
     <div class="shutdown-section">
@@ -804,6 +821,47 @@ HTML_TEMPLATE = """
                 .catch(() => showToast("Erreur lors de l'extinction", 'error'));
         });
 
+        /* ===== Camera AI detections polling ===== */
+        let _lastDetectionTs = 0;
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/detections');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                document.getElementById('cameraDot').classList.toggle('connected', data.camera_ok);
+
+                const dets = data.detections || [];
+
+                // Toast for new alerts since last poll
+                const newAlerts = dets.filter(d => d.is_alert && d.timestamp > _lastDetectionTs);
+                if (newAlerts.length > 0) {
+                    const labels = [...new Set(newAlerts.map(d => d.label))];
+                    showToast('Détection : ' + labels.join(', '), 'error', 4000);
+                }
+                if (dets.length > 0) {
+                    _lastDetectionTs = Math.max(...dets.map(d => d.timestamp));
+                }
+
+                const list = document.getElementById('detectionList');
+                if (dets.length === 0) {
+                    list.textContent = 'Aucune détection (60s)';
+                    document.getElementById('cameraStatus').textContent =
+                        data.camera_ok ? 'En ligne' : 'Erreur caméra';
+                    return;
+                }
+                list.innerHTML = '';
+                dets.slice(0, 10).forEach(d => {
+                    const div = document.createElement('div');
+                    div.className = 'detection-item' + (d.is_alert ? ' alert' : '');
+                    const age = d.age_s < 60 ? d.age_s + 's' : Math.round(d.age_s / 60) + 'min';
+                    div.textContent = d.label + ' ' + Math.round(d.confidence * 100) + '% — ' + age;
+                    list.appendChild(div);
+                });
+                document.getElementById('cameraStatus').textContent = dets.length + ' détection(s) (60s)';
+            } catch(e) {}
+        }, 2000);
+
         // Heartbeat: send current joystick state every 200ms to feed the watchdog
         setInterval(sendCommand, 200);
 
@@ -821,6 +879,7 @@ class WebServer:
 
     def __init__(self, motor_controller=None, sensor_receiver=None,
                  lidar_scanner=None, patrol_manager=None, pilot=None,
+                 camera=None,
                  host='0.0.0.0', port=8085,
                  auth_username=None, auth_password_hash=None,
                  ssl_cert=None, ssl_key=None,
@@ -832,6 +891,7 @@ class WebServer:
         self.lidar_scanner = lidar_scanner
         self.patrol_manager = patrol_manager
         self.pilot = pilot
+        self.camera = camera
         self.host = host
         self.port = port
         self._patrol_file = patrol_file
@@ -923,7 +983,17 @@ class WebServer:
                 'sensors_connected': self.sensor_receiver is not None,
                 'lidar_connected': self.lidar_scanner is not None,
                 'patrol_available': self.patrol_manager is not None,
+                'camera_connected': self.camera is not None and not self.camera.has_error(),
                 'uart_ok': uart_ok,
+            })
+
+        @self.app.route('/api/detections')
+        def api_detections():
+            if not self.camera:
+                return jsonify({'detections': [], 'camera_ok': False})
+            return jsonify({
+                'detections': self.camera.get_recent_detections(max_age_s=60.0),
+                'camera_ok': not self.camera.has_error(),
             })
 
         @self.app.route('/api/stop', methods=['POST'])

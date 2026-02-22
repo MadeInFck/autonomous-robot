@@ -34,6 +34,7 @@ class RobotApp:
 
     def __init__(self, enable_motors=True, enable_sensors=True,
                  enable_lidar=True, lidar_port=LIDAR_PORT,
+                 enable_camera=True, camera_conf=0.35,
                  web_port=WEB_PORT,
                  auth_username=None, auth_password_hash=None,
                  ssl_cert=None, ssl_key=None):
@@ -42,6 +43,7 @@ class RobotApp:
         self.lidar_scanner = None
         self.patrol_manager = None
         self.pilot = None
+        self.camera = None
         self.web_server = None
         self._running = False
 
@@ -92,6 +94,15 @@ class RobotApp:
                 print(f"[LiDAR] Erreur: {e}")
                 self.lidar_scanner = None
 
+        # Initialize the AI camera
+        if enable_camera:
+            print("\n[Camera] Initialisation...")
+            try:
+                from camera.ai_camera import AiCamera
+                self.camera = AiCamera(conf_threshold=camera_conf)
+            except Exception as e:
+                print(f"[Camera] Erreur: {e}")
+
         # Initialize the patrol manager
         print("\n[Patrol] Initialisation...")
         self.patrol_manager = PatrolManager(waypoint_radius=3.0)
@@ -128,6 +139,7 @@ class RobotApp:
             lidar_scanner=self.lidar_scanner,
             patrol_manager=self.patrol_manager,
             pilot=self.pilot,
+            camera=self.camera,
             port=web_port,
             auth_username=auth_username,
             auth_password_hash=auth_password_hash,
@@ -159,6 +171,9 @@ class RobotApp:
         print(f"Interface web: {url}")
         print("Ctrl+C pour arreter")
         print("-" * 50 + "\n")
+
+        if self.camera:
+            self.camera.start()
 
         try:
             while self._running:
@@ -204,6 +219,10 @@ class RobotApp:
         """Gracefully shuts down the application"""
         self._running = False
         print("\nArret des composants...")
+
+        if self.camera:
+            print("  - Arret caméra")
+            self.camera.stop()
 
         if self.pilot:
             print("  - Arret pilote")
@@ -263,6 +282,10 @@ def main():
                         help='Desactiver la reception UART')
     parser.add_argument('--no-lidar', action='store_true',
                         help='Desactiver le LiDAR')
+    parser.add_argument('--no-camera', action='store_true',
+                        help='Désactiver la caméra IA')
+    parser.add_argument('--camera-conf', type=float, default=0.35,
+                        help='Seuil de confiance caméra (défaut: 0.35)')
     parser.add_argument('--lidar-port', type=str, default=LIDAR_PORT,
                         help=f'Port LiDAR (defaut: {LIDAR_PORT})')
     parser.add_argument('--port', type=int, default=WEB_PORT,
@@ -280,6 +303,8 @@ def main():
         enable_motors=not args.no_motors,
         enable_sensors=not args.no_sensors,
         enable_lidar=not args.no_lidar,
+        enable_camera=not args.no_camera,
+        camera_conf=args.camera_conf,
         lidar_port=args.lidar_port,
         web_port=args.port,
         auth_username=auth_user,
