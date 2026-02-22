@@ -108,9 +108,11 @@ HTML_TEMPLATE = """
         .map-info { font-size: 0.65em; font-family: monospace; opacity: 0.6; margin-top: 4px; }
 
         .footer-space { height: 20px; flex-shrink: 0; }
-        .shutdown-section { display: flex; justify-content: center; padding: 10px; }
+        .shutdown-section { display: flex; justify-content: center; gap: 10px; padding: 10px; }
         .shutdown-btn { padding: 8px 20px; border-radius: 6px; border: 1px solid rgba(233,69,96,0.6); background: rgba(233,69,96,0.15); color: #e94560; font-size: 0.8em; cursor: pointer; touch-action: manipulation; }
         .shutdown-btn:active { background: rgba(233,69,96,0.35); }
+        .restart-btn { padding: 8px 20px; border-radius: 6px; border: 1px solid rgba(240,165,0,0.6); background: rgba(240,165,0,0.12); color: #f0a500; font-size: 0.8em; cursor: pointer; touch-action: manipulation; }
+        .restart-btn:active { background: rgba(240,165,0,0.3); }
 
         .toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 0.85em; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .toast.show { opacity: 1; }
@@ -289,7 +291,8 @@ HTML_TEMPLATE = """
     </div>
 
     <div class="shutdown-section">
-        <button class="shutdown-btn" id="shutdownBtn">&#9211; Eteindre le robot</button>
+        <button class="restart-btn" id="restartBtn">&#8635; Redémarrer</button>
+        <button class="shutdown-btn" id="shutdownBtn">&#9211; Eteindre</button>
     </div>
     <div class="footer-space"></div>
     <div class="toast" id="toast"></div>
@@ -846,6 +849,14 @@ HTML_TEMPLATE = """
                 .catch(() => showToast("Erreur lors de l'extinction", 'error'));
         });
 
+        // Restart button
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            if (!confirm('Redémarrer le robot ?')) return;
+            fetch('/api/restart', { method: 'POST' })
+                .then(() => showToast('Redémarrage en cours... Reconnectez-vous dans ~30s.', 'success', 10000))
+                .catch(() => showToast('Erreur lors du redémarrage', 'error'));
+        });
+
         /* ===== Camera AI detections polling ===== */
         const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
@@ -1212,6 +1223,17 @@ class WebServer:
                 subprocess.run(['sudo', 'shutdown', 'now'])
             threading.Thread(target=_do_shutdown, daemon=True).start()
             return jsonify({'status': 'ok', 'message': 'Extinction en cours...'})
+
+        @self.app.route('/api/restart', methods=['POST'])
+        def api_restart():
+            import subprocess
+            import threading
+            def _do_restart():
+                import time
+                time.sleep(1)
+                subprocess.run(['sudo', 'reboot'])
+            threading.Thread(target=_do_restart, daemon=True).start()
+            return jsonify({'status': 'ok', 'message': 'Redémarrage en cours...'})
 
         # --- Patrol routes ---
 
