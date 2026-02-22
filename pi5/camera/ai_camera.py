@@ -116,14 +116,23 @@ class AiCamera:
                 pass
 
     def pause(self):
-        """Pause detection and streaming (picam2 keeps running)."""
+        """Stop the camera sensor (real power saving — IMX500 goes idle).
+        The network model stays loaded on-chip; resume() restarts in <1s."""
         self._paused = True
         with self._lock:
             self._latest_jpeg = b''
             self._history = []
+        try:
+            self._picam2.stop()
+        except Exception:
+            pass
 
     def resume(self):
-        """Resume detection and streaming."""
+        """Restart the camera sensor and resume detection."""
+        try:
+            self._picam2.start()
+        except Exception:
+            pass
         self._paused = False
 
     def is_paused(self) -> bool:
@@ -131,14 +140,12 @@ class AiCamera:
 
     def _loop(self):
         while self._running:
+            if self._paused:
+                time.sleep(0.1)
+                continue
             try:
-                # Always drain the picam2 buffer to avoid stale frames on resume
                 frame = self._picam2.capture_array()
                 metadata = self._picam2.capture_metadata()
-
-                if self._paused:
-                    continue
-
                 outputs = self._imx500.get_outputs(metadata)
 
                 # Encode frame to JPEG for streaming (raw, orientation handled client-side)
