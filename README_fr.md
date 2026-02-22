@@ -10,7 +10,7 @@ Robot autonome à roues Mecanum avec architecture distribuée Raspberry Pi 5 + P
 Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 ┌─────────────────────────────┐         ┌──────────────────────────────┐
 │ • NEO-6M GPS (UART1)        │         │ • 4 moteurs Mecanum (HW-249) │
-│ • BMI160 IMU (I2C1)         │◄─UART3─►│ • Contrôle omnidirectionnel  │
+│ • IMU I2C1 (BMI160/BNO085)  │◄─UART3─►│ • Contrôle omnidirectionnel  │
 │ • Acquisition capteurs 10Hz │         │ • Serveur Flask (WiFi)       │
 │ • TX: GP0, RX: GP1          │         │ • TX: GPIO8, RX: GPIO9       │
 └─────────────────────────────┘         └──────────────────────────────┘
@@ -27,7 +27,8 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 
 - **Contrôle Mecanum** : Déplacement omnidirectionnel (avant/arrière, strafe, rotation)
 - **Interface smartphone** : Double joystick tactile (mouvement + rotation) via navigateur web
-- **Télémétrie temps réel** : Position GPS, accéléromètre, gyroscope, vitesse, cap
+- **Télémétrie temps réel** : Position GPS, données IMU (accéléromètre + cap), vitesse, satellites
+- **Options IMU** : BMI160 (accel + gyro) ou BNO085 9-DOF (accel + gyro + mag, cap absolu à toute vitesse)
 - **Contrôle de vitesse** : Réglable de 30% à 100% depuis l'interface
 - **Navigation autonome** : Patrouille par waypoints GPS avec évitement d'obstacles (LiDAR)
 - **LiDAR RPLidar C1** : Scan 360°, détection d'obstacles, grille d'occupation
@@ -52,16 +53,42 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 | VCC    | 3V3           | Alimentation |
 | GND    | GND           | Masse |
 
-### IMU BMI160 → Pico (I2C1, 400 kHz)
+### IMU → Pico (I2C1, 400 kHz)
 
-| BMI160 | Pico (broche) | Description |
-|--------|---------------|-------------|
-| SDA    | GP14 (19)     | I2C1 Data   |
-| SCL    | GP15 (20)     | I2C1 Clock  |
+Deux options IMU sont supportées sur les mêmes broches. Choisir selon le matériel disponible :
+
+**Option A — BMI160** (accéléromètre + gyroscope, courant/économique)
+
+> Attention : beaucoup de modules "BMI160" bon marché (AliExpress) sont des clones
+> (chip ID ≠ 0xD1) avec le gyroscope non fonctionnel. Lancer `pico/diag_bmi160.py`
+> dans Thonny pour vérifier.
+
+| BMI160 | Pico (broche) | Description  |
+|--------|---------------|--------------|
+| SDA    | GP14 (19)     | I2C1 Data    |
+| SCL    | GP15 (20)     | I2C1 Clock   |
 | VCC    | 3V3           | Alimentation |
-| GND    | GND           | Masse |
+| GND    | GND           | Masse        |
 
 Adresse I2C : `0x68` (SDO=LOW) ou `0x69` (SDO=HIGH)
+Driver : `pico/lib/bmi160_raw.py`
+
+**Option B — BNO085** (9-DOF fusion : accel + gyro + mag, recommandé)
+
+Fournit le cap absolu (yaw) référencé au nord magnétique, même à l'arrêt ou à basse vitesse.
+Utiliser le [breakout Adafruit BNO085](https://www.adafruit.com/product/4754) (mode I2C, par défaut).
+
+| BNO085 | Pico (broche) | Description  |
+|--------|---------------|--------------|
+| SDA    | GP14 (19)     | I2C1 Data    |
+| SCL    | GP15 (20)     | I2C1 Clock   |
+| VCC    | 3V3           | Alimentation |
+| GND    | GND           | Masse        |
+
+Adresse I2C : `0x4A` (PS0=LOW, PS1=LOW) ou `0x4B` (PS0=HIGH)
+Driver : `pico/lib/bno085.py`
+
+> Les deux capteurs partagent le même bus I2C (adresses différentes) et peuvent coexister si besoin.
 
 ### Moteurs Mecanum (HW-249 / L9110S)
 
@@ -199,8 +226,10 @@ autonomous-robot/
 │       └── key.pem
 ├── pico/                          # Code MicroPython (Pico)
 │   ├── main.py                    # Application capteurs principale
+│   ├── diag_bmi160.py             # Script diagnostic BMI160 (à lancer dans Thonny)
 │   └── lib/
-│       ├── bmi160_raw.py          # Driver IMU BMI160
+│       ├── bmi160_raw.py          # Driver IMU BMI160 (option A)
+│       ├── bno085.py              # Driver IMU BNO085 9-DOF (option B, recommandé)
 │       ├── gps_reader.py          # Lecteur GPS NEO-6M
 │       ├── micropyGPS.py          # Parser NMEA (lib externe)
 │       └── protocole.py           # Encodage/décodage trames UART
@@ -238,14 +267,14 @@ Octets 2-31  : PAYLOAD (30 bytes)
   4-5        : Accéléromètre X   (int16, en mg)
   6-7        : Accéléromètre Y   (int16, en mg)
   8-9        : Accéléromètre Z   (int16, en mg)
-  10-11      : Gyroscope X       (int16, en 0.1°/s)
-  12-13      : Gyroscope Y       (int16, en 0.1°/s)
-  14-15      : Gyroscope Z       (int16, en 0.1°/s)
+  10-11      : Gyroscope X       (int16, en 0.1°/s — BMI160 uniquement, 0 avec BNO085)
+  12-13      : Gyroscope Y       (int16, en 0.1°/s — BMI160 uniquement, 0 avec BNO085)
+  14-15      : Gyroscope Z       (int16, en 0.1°/s — BMI160 uniquement, 0 avec BNO085)
   16-19      : Latitude          (int32, en microdegrés)
   20-23      : Longitude         (int32, en microdegrés)
   24-25      : Altitude          (int16, en décimètres)
   26-27      : Vitesse           (uint16, en cm/s)
-  28-29      : Cap               (uint16, en 0.01°)
+  28-29      : Cap               (uint16, en 0.01° — GPS COG avec BMI160, yaw BNO085 avec BNO085)
   30         : Satellites        (uint8, nombre de satellites)
   31         : Fix qualité       (uint8, 0=no fix, 1=GPS, 2=DGPS)
 Octet  32    : CRC-8 (polynôme 0x07, sur le payload)
@@ -289,10 +318,11 @@ Le serveur Flask expose les endpoints suivants :
 {
   "sequence": 1234,
   "acc_x": 0.012, "acc_y": -0.005, "acc_z": 1.001,
-  "gyr_x": 0.1, "gyr_y": -0.2, "gyr_z": 0.05,
+  "gyr_x": 0.1, "gyr_y": -0.2, "gyr_z": 0.05,  // BMI160 uniquement ; toujours 0.0 avec BNO085
   "latitude": 48.8566, "longitude": 2.3522,
   "altitude": 35.2, "speed": 1.5, "speed_kmh": 5.4,
-  "heading": 127.5, "satellites": 9, "has_fix": true,
+  "heading": 127.5,  // GPS COG (BMI160) ou yaw absolu BNO085 (BNO085)
+  "satellites": 9, "has_fix": true,
   "timestamp": 1700000000.0
 }
 ```
@@ -312,18 +342,19 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 
 - [x] Valider câblage moteurs et sens de rotation
 - [x] Tester interface joystick sur smartphone
-- [x] Calibrer IMU BMI160 au repos
+- [x] Calibrer IMU BMI160 au repos (accéléromètre OK ; gyroscope HS sur les clones — voir diag_bmi160.py)
 - [x] Valider réception GPS en extérieur (premier fix)
 - [x] Écrire tests unitaires (`pi5/tests/`)
 - [x] Intégrer navigation autonome par waypoints GPS
 - [x] Ajouter détection d'obstacles (RPLidar C1)
 - [x] Sécuriser l'interface web (auth + TLS)
+- [x] Écrire driver BNO085 (`pico/lib/bno085.py`) — cap absolu à toute vitesse
+- [ ] Intégrer BNO085 dans `pico/main.py` (module en commande) — remplace GPS COG pour le cap
 - [ ] Tester patrouille autonome (suivi waypoints GPS, arrêt, changement de mode)
 - [ ] Tester l'évitement d'obstacles lidar (scénarios réels : obstacles statiques, distance de passage, récupération après évitement)
 - [ ] Intégrer Raspberry Pi AI Camera (détection intelligente d'obstacles, personnes, animaux)
 - [ ] Notifications push + sirène en cas de détection d'intrusion
 - [ ] Créer une app iOS native à l'image de l'interface web existante
-- [ ] Ajouter magnétomètre BMM150 pour cap absolu (remplace GPS COG, fonctionnel à l'arrêt et à basse vitesse) — après validation de la patrouille
 
 ## Licence
 

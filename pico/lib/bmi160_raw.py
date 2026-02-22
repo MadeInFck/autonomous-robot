@@ -6,10 +6,12 @@ Raw accelerometer + gyroscope data reading
 import time
 
 # BMI160 registers
-BMI160_CMD = 0x7E
-BMI160_DATA = 0x0C  # Gyro X LSB (6 bytes gyro + 6 bytes accel)
+BMI160_CMD        = 0x7E
+BMI160_DATA       = 0x0C  # Gyro X LSB (6 bytes gyro + 6 bytes accel)
+BMI160_SOFT_RESET = 0xB6  # Soft reset command
 BMI160_CMD_ACC_NORMAL = 0x11
-BMI160_CMD_GYR_NORMAL = 0x15
+BMI160_CMD_GYR_FAST_START = 0x17
+BMI160_CMD_GYR_NORMAL     = 0x15
 
 
 class BMI160Raw:
@@ -44,14 +46,39 @@ class BMI160Raw:
     def _init_sensor(self):
         """Initialize BMI160 in normal mode (acc + gyro)"""
         try:
-            # Enable accelerometer
-            self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_ACC_NORMAL]))
-            time.sleep(0.05)
-            # Enable gyroscope
-            self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_GYR_NORMAL]))
+            # Soft reset — ensures both sensors start from a known suspend state
+            self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_SOFT_RESET]))
             time.sleep(0.1)
-            self._error = False
-            print("BMI160: OK (acc+gyro)")
+            # Enable accelerometer — datasheet start-up time from suspend ≤ 80 ms
+            self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_ACC_NORMAL]))
+            time.sleep(0.1)
+            # Enable gyroscope — try direct normal mode first, then fast_start→normal
+            pmu = 0x00
+            for attempt in range(3):
+                if attempt < 2:
+                    # Direct suspend → normal
+                    self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_GYR_NORMAL]))
+                else:
+                    # Last resort: fast_start → normal (wakes the gyro on stubborn clones)
+                    self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_GYR_FAST_START]))
+                    time.sleep(0.05)
+                    self.i2c.writeto_mem(self.addr, BMI160_CMD, bytes([BMI160_CMD_GYR_NORMAL]))
+                # Poll PMU_STATUS until gyro reaches normal mode (max 200 ms)
+                for _ in range(20):
+                    time.sleep(0.01)
+                    pmu = self.i2c.readfrom_mem(self.addr, 0x03, 1)[0]
+                    if ((pmu >> 2) & 0x03) == 0x01:
+                        break
+                if ((pmu >> 2) & 0x03) == 0x01:
+                    break
+                print(f"BMI160: gyr suspend after attempt {attempt+1}, retrying...")
+                time.sleep(0.05)
+            # Verify final PMU status — bits [5:4]=acc, bits [3:2]=gyr ; 0b01=normal
+            pmu = self.i2c.readfrom_mem(self.addr, 0x03, 1)[0]
+            acc_ok = ((pmu >> 4) & 0x03) == 0x01
+            gyr_ok = ((pmu >> 2) & 0x03) == 0x01
+            print(f"BMI160 PMU: 0x{pmu:02x} | Acc={'OK' if acc_ok else 'SUSPEND'} Gyr={'OK' if gyr_ok else 'SUSPEND'}")
+            self._error = not (acc_ok and gyr_ok)
         except Exception as e:
             print(f"BMI160: Erreur init - {e}")
             self._error = True
