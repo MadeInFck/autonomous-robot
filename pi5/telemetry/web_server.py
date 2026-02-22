@@ -126,6 +126,7 @@ HTML_TEMPLATE = """
         .detection-item.alert { background: rgba(233,69,96,0.25); border-left: 2px solid #e94560; }
         .stream-btn { display: block; width: 100%; margin: 6px 0; padding: 5px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.75em; cursor: pointer; touch-action: manipulation; text-align: center; }
         .stream-btn:active { background: rgba(255,255,255,0.25); }
+        .stream-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .cam-toggle-btn { margin-left: auto; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); color: #fff; font-size: 0.68em; cursor: pointer; touch-action: manipulation; }
         .cam-toggle-btn.paused { border-color: rgba(74,153,120,0.7); color: #4a9978; }
         /* Stream modal */
@@ -871,6 +872,7 @@ HTML_TEMPLATE = """
 
                 document.getElementById('cameraDot').classList.toggle('connected', data.camera_ok && !data.paused);
                 _updateToggleBtn(data.paused);
+                document.querySelector('.stream-btn').disabled = data.paused;
 
                 const dets = data.detections || [];
 
