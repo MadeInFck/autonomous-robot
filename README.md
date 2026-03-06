@@ -376,7 +376,7 @@ Speeds are normalized by the maximum value to prevent saturation.
 - [x] Add obstacle detection (RPLidar C1)
 - [x] Secure web interface (auth + TLS)
 - [x] Write BNO085 driver (`pico/lib/bno085.py`) — absolute heading at any speed
-- [ ] Integrate BNO085 into `pico/main.py` (module on order) — replaces GPS COG for heading
+- [x] Integrate BNO085 into `pico/main.py` — auto-detected at 0x4A, replaces GPS COG for heading
 - [ ] Test autonomous patrol (GPS waypoint following, stop, mode switching)
 - [ ] Test LiDAR obstacle avoidance (real-world scenarios: static obstacles, passing distance, avoidance recovery)
 - [x] Integrate Raspberry Pi AI Camera (IMX500 / EfficientDet Lite0 — person/animal detection, toast alerts, MJPEG stream)

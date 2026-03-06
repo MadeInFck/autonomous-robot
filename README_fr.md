@@ -377,7 +377,7 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 - [x] Ajouter détection d'obstacles (RPLidar C1)
 - [x] Sécuriser l'interface web (auth + TLS)
 - [x] Écrire driver BNO085 (`pico/lib/bno085.py`) — cap absolu à toute vitesse
-- [ ] Intégrer BNO085 dans `pico/main.py` (module en commande) — remplace GPS COG pour le cap
+- [x] Intégrer BNO085 dans `pico/main.py` — auto-détecté à 0x4A, remplace GPS COG pour le cap
 - [ ] Tester patrouille autonome (suivi waypoints GPS, arrêt, changement de mode)
 - [ ] Tester l'évitement d'obstacles lidar (scénarios réels : obstacles statiques, distance de passage, récupération après évitement)
 - [x] Intégrer Raspberry Pi AI Camera (IMX500 / EfficientDet Lite0 — détection personnes/animaux, alertes toast, flux MJPEG)
