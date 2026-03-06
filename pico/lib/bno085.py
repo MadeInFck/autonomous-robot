@@ -144,6 +144,10 @@ class BNO085:
         loop runs slower than rate_hz. Stops as soon as a Rotation Vector
         report is parsed (latest value is always the most useful).
 
+        The BNO085 prepends a 5-byte Timestamp Rebase header (0xFB + 4 bytes)
+        before each sensor report when running in timestamped mode. We skip
+        this prefix before looking for the Rotation Vector report ID (0x05).
+
         Returns:
             True if yaw/pitch/roll were updated this call.
         """
@@ -151,9 +155,12 @@ class BNO085:
             channel, payload = self._read_packet()
             if channel is None:
                 break  # no more data queued
-            if channel == _CHAN_REPORTS and payload and \
-               payload[0] == _REPORT_ROTATION_VECTOR and len(payload) >= 14:
-                return self._parse_rotation_vector(payload)
+            if channel != _CHAN_REPORTS or not payload:
+                continue
+            # Skip 5-byte Timestamp Rebase prefix (0xFB + 4-byte timestamp)
+            offset = 5 if payload[0] == 0xFB and len(payload) > 5 else 0
+            if payload[offset] == _REPORT_ROTATION_VECTOR and len(payload) - offset >= 14:
+                return self._parse_rotation_vector(payload[offset:])
         return False
 
     def _parse_rotation_vector(self, payload: bytes) -> bool:
