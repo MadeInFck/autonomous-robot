@@ -53,7 +53,7 @@ GPS_BAUDRATE = 9600
 IMU_I2C_ID = 1
 IMU_SDA_PIN = 14
 IMU_SCL_PIN = 15
-IMU_FREQ = 400000
+IMU_FREQ = 100_000  # 100 kHz — avoids RP2040 clock-stretching timeouts with BNO085
 IMU_ADDR_BNO085 = 0x4A  # BNO085 default (PS0=low, PS1=low)
 IMU_ADDR_BMI160 = 0x68  # BMI160 default (SDO=low)
 

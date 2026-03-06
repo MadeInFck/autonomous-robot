@@ -106,11 +106,13 @@ class BNO085:
 
     def _init(self, rate_hz: int):
         """Power-on init: drain boot packets then enable rotation vector."""
-        time.sleep(0.3)   # BNO085 boot time
+        time.sleep(0.8)   # BNO085 needs 600-800 ms to boot (300 ms too short)
         # Drain advertisement packets sent on CHAN_EXECUTABLE at startup
-        for _ in range(10):
+        for _ in range(15):
             self._read_packet()
             time.sleep(0.02)
+        if self._error:
+            return   # write already failed during drain — abort
         self._enable_report(_REPORT_ROTATION_VECTOR, rate_hz)
         time.sleep(0.15)
         # Sanity check: can we read back anything?
@@ -191,7 +193,8 @@ if __name__ == '__main__':
     from machine import I2C, Pin
 
     print("=== BNO085 Test ===")
-    i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=400000)
+    # 100 kHz: avoids clock-stretching timeouts during SHTP init on RP2040
+    i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=100_000)
     devices = i2c.scan()
     print(f"I2C devices: {[hex(d) for d in devices]}")
 
