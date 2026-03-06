@@ -155,6 +155,7 @@ HTML_TEMPLATE = """
         <div class="status-row">
             <span><span class="status-dot" id="connDot"></span>WiFi: <span id="connText">...</span></span>
             <span>GPS: <span class="status-dot" id="gpsDot"></span><span id="gpsFixStatus">--</span> | <span id="gpsSats">0</span> sat</span>
+            <span id="imuCalSpan" style="display:none">IMU: <span class="status-dot" id="imuCalDot"></span><span id="imuCalText">--</span></span>
             <span class="mode-badge manual" id="modeBadge">MANUEL</span>
         </div>
         <div class="status-row">
@@ -178,12 +179,16 @@ HTML_TEMPLATE = """
                 <span class="sensor-axis"><span class="axis-label">Roll</span> <span id="roll">--</span></span>
             </div>
         </div>
-        <div class="sensor-group">
-            <div class="sensor-label">Gyro (deg/s)</div>
-            <div class="sensor-values">
+        <div class="sensor-group" id="gyrGroup">
+            <div class="sensor-label" id="gyrLabel">Gyro (deg/s)</div>
+            <div class="sensor-values" id="gyrValues">
                 <span class="sensor-axis"><span class="axis-label">X</span> <span id="gyrX">--</span></span>
                 <span class="sensor-axis"><span class="axis-label">Y</span> <span id="gyrY">--</span></span>
                 <span class="sensor-axis"><span class="axis-label">Z</span> <span id="gyrZ">--</span></span>
+            </div>
+            <div class="sensor-values" id="bnoCalValues" style="display:none">
+                <span class="sensor-axis"><span class="axis-label">Précision</span> <span id="bnoAccuracy">--</span></span>
+                <span class="sensor-axis"><span id="bnoCalStatus">--</span></span>
             </div>
         </div>
     </div>
@@ -437,9 +442,25 @@ HTML_TEMPLATE = """
                     document.getElementById('pitch').textContent = pitch.toFixed(1) + 'deg';
                     document.getElementById('roll').textContent = roll.toFixed(1) + 'deg';
                 }
-                document.getElementById('gyrX').textContent = (d.gyr_x !== undefined) ? d.gyr_x.toFixed(1) : '--';
-                document.getElementById('gyrY').textContent = (d.gyr_y !== undefined) ? d.gyr_y.toFixed(1) : '--';
-                document.getElementById('gyrZ').textContent = (d.gyr_z !== undefined) ? d.gyr_z.toFixed(1) : '--';
+                const isBno = d.imu_type === 'BNO085';
+                document.getElementById('gyrValues').style.display = isBno ? 'none' : '';
+                document.getElementById('bnoCalValues').style.display = isBno ? '' : 'none';
+                document.getElementById('imuCalSpan').style.display = isBno ? '' : 'none';
+                if (isBno) {
+                    document.getElementById('gyrLabel').textContent = 'BNO085';
+                    const acc = d.heading_accuracy_deg !== undefined ? d.heading_accuracy_deg : 180;
+                    const cal = d.imu_calibrated === true;
+                    document.getElementById('bnoAccuracy').textContent = acc.toFixed(1) + 'deg';
+                    document.getElementById('bnoCalStatus').textContent = cal ? '✓ Calibré' : 'Calibration...';
+                    document.getElementById('bnoCalStatus').style.color = cal ? '#4f8' : '#fa0';
+                    document.getElementById('imuCalDot').classList.toggle('connected', cal);
+                    document.getElementById('imuCalText').textContent = cal ? 'CAL' : acc.toFixed(0) + 'deg';
+                } else {
+                    document.getElementById('gyrLabel').textContent = 'Gyro (deg/s)';
+                    document.getElementById('gyrX').textContent = (d.gyr_x !== undefined) ? d.gyr_x.toFixed(1) : '--';
+                    document.getElementById('gyrY').textContent = (d.gyr_y !== undefined) ? d.gyr_y.toFixed(1) : '--';
+                    document.getElementById('gyrZ').textContent = (d.gyr_z !== undefined) ? d.gyr_z.toFixed(1) : '--';
+                }
                 const hasFix = d.has_fix === true || (d.latitude !== undefined && (d.latitude !== 0 || d.longitude !== 0));
                 document.getElementById('gpsDot').classList.toggle('connected', hasFix);
                 document.getElementById('gpsFixStatus').textContent = hasFix ? 'FIX' : 'NO FIX';

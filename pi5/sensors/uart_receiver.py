@@ -57,6 +57,11 @@ class SensorData:
     satellites: int = 0
     has_fix: bool = False
 
+    # IMU type and calibration (BNO085 only)
+    imu_type: str = 'unknown'              # 'BNO085' or 'BMI160'
+    heading_accuracy_deg: float = 180.0    # BNO085: lower = better (< 15 = calibrated)
+    imu_calibrated: bool = False
+
     # Timestamp
     timestamp: float = 0.0
 
@@ -321,6 +326,18 @@ class UARTReceiver:
                     self._check_sequence(frame['seq'])
                     self._packets_received += 1
 
+                    # Detect BNO085: gyr_x and gyr_y are always 0; gyr_z encodes
+                    # heading_accuracy_deg * 10 (0.1° units, max 1800 for 180°)
+                    is_bno085 = frame['gyr_x'] == 0.0 and frame['gyr_y'] == 0.0
+                    if is_bno085:
+                        heading_acc = frame['gyr_z']   # already in degrees (decoded as 0.1°/s units)
+                        imu_type = 'BNO085'
+                        imu_calibrated = heading_acc < 15.0
+                    else:
+                        heading_acc = 180.0
+                        imu_type = 'BMI160'
+                        imu_calibrated = False
+
                     # Convert to SensorData
                     sensor_data = SensorData(
                         sequence=frame['seq'],
@@ -329,7 +346,7 @@ class UARTReceiver:
                         acc_z=frame['acc_z'],
                         gyr_x=frame['gyr_x'],
                         gyr_y=frame['gyr_y'],
-                        gyr_z=frame['gyr_z'],
+                        gyr_z=0.0 if is_bno085 else frame['gyr_z'],
                         latitude=frame['latitude'],
                         longitude=frame['longitude'],
                         altitude=frame['altitude'],
@@ -338,6 +355,9 @@ class UARTReceiver:
                         heading=frame['cap'],
                         satellites=frame['satellites'],
                         has_fix=frame['fix_quality'] > 0,
+                        imu_type=imu_type,
+                        heading_accuracy_deg=heading_acc,
+                        imu_calibrated=imu_calibrated,
                         timestamp=time.time()
                     )
 

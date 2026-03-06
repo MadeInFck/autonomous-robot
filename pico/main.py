@@ -147,7 +147,10 @@ def main():
                     if not imu.update():
                         break
                 acc_x_mg = acc_y_mg = acc_z_mg = 0
-                gyr_x_raw = gyr_y_raw = gyr_z_raw = 0
+                gyr_x_raw = gyr_y_raw = 0
+                # Encode heading_accuracy_deg in gyr_z (0.1° units, max 1800 for 180°)
+                # Pi5 detects BNO085 by checking gyr_x == 0 and gyr_y == 0
+                gyr_z_raw = int(min(imu.heading_accuracy_deg, 180.0) * 10) if imu.valid else 1800
                 # Use BNO085 absolute yaw; fall back to GPS COG until valid
                 heading   = imu.yaw if imu.valid else gps_data['course']
                 imu_valid = imu.valid
