@@ -58,7 +58,7 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 
 ### IMU → Pico (I2C1, 400 kHz)
 
-Two IMU options are supported on the same pins. Choose one depending on what you have:
+Two IMU options are supported on the same pins. `pico/main.py` **auto-detects** whichever is connected: BNO085 at `0x4A` takes priority; BMI160 at `0x68` is the fallback. No configuration needed.
 
 **Option A — BMI160** (accelerometer + gyroscope, cheap/common)
 
@@ -89,6 +89,9 @@ Use the [Adafruit BNO085 breakout](https://www.adafruit.com/product/4754) (I2C m
 
 I2C address: `0x4A` (PS0=LOW, PS1=LOW) or `0x4B` (PS0=HIGH)
 Driver: `pico/lib/bno085.py`
+
+> To verify the BNO085 before full integration, run `pico/lib/bno085.py` directly in Thonny
+> (the `__main__` block at the bottom prints yaw/pitch/roll in a live loop).
 
 > Both sensors share the same I2C bus (different addresses) and can coexist if needed.
 
