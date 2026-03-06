@@ -70,21 +70,32 @@ class BNO085:
             print(f"BNO085 write error: {e}")
             self._error = True
 
-    def _read_packet(self, buf_size: int = 64):
-        """Read one SHTP packet.
+    def _read_packet(self):
+        """Read one SHTP packet using a two-phase I2C read.
+
+        Phase 1 — 4-byte header: determines actual packet length.
+        Phase 2 — full packet: only issued when payload is available.
+        (Single read of N bytes caused RP2040 to clock-stretch garbage into
+        the device when N > actual packet size, corrupting subsequent reads.)
 
         Returns:
-            (channel, payload_bytes) or (None, None) on error / empty packet.
+            (channel, payload_bytes) or (None, None) on error / no data.
         """
+        # Phase 1: header only
         try:
-            buf = self.i2c.readfrom(self.addr, buf_size)
+            header = self.i2c.readfrom(self.addr, 4)
         except OSError:
             return None, None
-        length = struct.unpack_from('<H', buf)[0] & 0x7FFF
-        if length < 4:
+        length = struct.unpack_from('<H', header)[0] & 0x7FFF
+        if length <= 4:
+            return None, None  # no payload (length==4) or no data (length==0)
+        channel = header[2]
+        # Phase 2: full packet
+        try:
+            buf = self.i2c.readfrom(self.addr, length)
+        except OSError:
             return None, None
-        channel = buf[2]
-        payload = bytes(buf[4:length]) if length > 4 else b''
+        payload = bytes(buf[4:]) if len(buf) > 4 else b''
         return channel, payload
 
     # ── Sensor setup ──────────────────────────────────────────────
@@ -127,19 +138,22 @@ class BNO085:
     # ── Data acquisition ──────────────────────────────────────────
 
     def update(self) -> bool:
-        """Read one SHTP packet and update yaw/pitch/roll if it contains
-        a Rotation Vector report.
+        """Drain pending SHTP packets and update yaw/pitch/roll.
 
-        Call regularly in the main loop (≥ rate_hz times per second).
+        Reads up to 8 packets per call to avoid falling behind when the main
+        loop runs slower than rate_hz. Stops as soon as a Rotation Vector
+        report is parsed (latest value is always the most useful).
 
         Returns:
-            True if yaw/pitch/roll were updated.
+            True if yaw/pitch/roll were updated this call.
         """
-        channel, payload = self._read_packet()
-        if channel != _CHAN_REPORTS or not payload:
-            return False
-        if payload[0] == _REPORT_ROTATION_VECTOR and len(payload) >= 14:
-            return self._parse_rotation_vector(payload)
+        for _ in range(8):
+            channel, payload = self._read_packet()
+            if channel is None:
+                break  # no more data queued
+            if channel == _CHAN_REPORTS and payload and \
+               payload[0] == _REPORT_ROTATION_VECTOR and len(payload) >= 14:
+                return self._parse_rotation_vector(payload)
         return False
 
     def _parse_rotation_vector(self, payload: bytes) -> bool:
