@@ -9,11 +9,36 @@ Protocol: STX/ETX with CRC-8 (compatible with TestInterfaceUART)
 import struct
 import time
 import threading
+import json
+import os
 import serial
 from dataclasses import dataclass
 from typing import Optional, Callable
 from queue import Queue, Empty
 from enum import Enum, auto
+
+# Path where BNO085 calibration state is persisted across reboots
+_CAL_STATE_PATH = os.path.expanduser('~/.config/robot/imu_cal_state.json')
+
+
+def _load_cal_state() -> bool:
+    """Return True if a valid BNO085 calibration was saved in a previous session."""
+    try:
+        with open(_CAL_STATE_PATH) as f:
+            data = json.load(f)
+        return bool(data.get('calibrated', False))
+    except Exception:
+        return False
+
+
+def _save_cal_state(calibrated: bool):
+    """Persist BNO085 calibration state to disk."""
+    try:
+        os.makedirs(os.path.dirname(_CAL_STATE_PATH), exist_ok=True)
+        with open(_CAL_STATE_PATH, 'w') as f:
+            json.dump({'calibrated': calibrated, 'timestamp': time.time()}, f)
+    except Exception:
+        pass
 
 
 # Protocol constants
@@ -309,6 +334,12 @@ class UARTReceiver:
 
     def _receive_loop(self):
         """Reception loop (thread)"""
+        # Restore calibration state from previous session so the UI shows
+        # "Calibré" immediately after reboot if DCD was saved before.
+        # Overridden by live data as soon as fresh packets arrive.
+        _persisted_cal = _load_cal_state()
+        _cal_state_saved = _persisted_cal  # avoid writing if already correct
+
         while self._running:
             try:
                 # Read available bytes
@@ -333,6 +364,18 @@ class UARTReceiver:
                         heading_acc = frame['gyr_z']   # already in degrees (decoded as 0.1°/s units)
                         imu_type = 'BNO085'
                         imu_calibrated = heading_acc < 10.0
+                        # Use persisted state while sensor converges after reboot
+                        if not imu_calibrated and _persisted_cal:
+                            imu_calibrated = True   # DCD loaded, waiting for convergence
+                        # Persist new calibrated state; clear persisted if accuracy is bad
+                        if imu_calibrated and not _cal_state_saved:
+                            _save_cal_state(True)
+                            _cal_state_saved = True
+                        elif heading_acc > 30.0 and _persisted_cal:
+                            # Accuracy degraded significantly — clear persisted state
+                            _persisted_cal = False
+                            _cal_state_saved = False
+                            _save_cal_state(False)
                     else:
                         heading_acc = 180.0
                         imu_type = 'BMI160'

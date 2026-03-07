@@ -213,9 +213,27 @@ class BNO085:
         return True
 
     def save_calibration(self):
-        """Persist current calibration to BNO085 internal flash (DCD save, cmd 0x06)."""
+        """Persist current calibration to BNO085 internal flash (DCD save, cmd 0x06).
+
+        Waits for the Command Response (0xF1) that confirms the flash write is
+        complete before returning. Without this wait the robot could power off
+        before the write finishes and the DCD would be corrupted.
+        """
         self._send_command(bytes([0x06, 0, 0, 0, 0, 0, 0, 0, 0]))
-        print("BNO085: calibration saved to flash")
+        # Poll for Command Response on CHAN_CONTROL (up to 2 s)
+        deadline = time.ticks_ms() + 2000
+        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+            ch, payload = self._read_packet()
+            if (ch == _CHAN_CONTROL and payload and len(payload) >= 3
+                    and payload[0] == 0xF1 and payload[2] == 0x06):
+                status = payload[3] if len(payload) > 3 else 0
+                if status == 0:
+                    print("BNO085: calibration saved to flash OK")
+                else:
+                    print(f"BNO085: DCD save error (status={status})")
+                return
+            time.sleep(0.01)
+        print("BNO085: DCD save sent (no response — check sensor)")
 
     def is_calibrated(self, threshold_deg: float = 10.0) -> bool:
         """True when heading accuracy is below threshold_deg (lower = better calibrated)."""
