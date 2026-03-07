@@ -95,6 +95,10 @@ Driver: `pico/lib/bno085.py`
 
 > Both sensors share the same I2C bus (different addresses) and can coexist if needed.
 
+**BNO085 calibration**: the sensor requires a 3D magnetic calibration (figure-8 motions while tilting the robot in all directions). Once `heading_accuracy_deg < 10°`, calibration is automatically saved to the sensor's internal flash (DCD) and reloaded on the next boot. The calibrated state is also persisted on the Pi5 at `~/.config/robot/imu_cal_state.json` so the UI shows green immediately after reboot.
+
+**Heading convention**: N=0°, E=90°, S=180°, W=270° (clockwise = increasing). Mount the sensor flat with the X arrow pointing toward the robot's front.
+
 ### Mecanum Motors (HW-249 / L9110S)
 
 ```
@@ -256,7 +260,7 @@ autonomous-robot/
 │   │   ├── obstacle_avoider.py    # LiDAR obstacle avoidance
 │   │   └── pilot.py               # Autonomous pilot (GPS + LiDAR)
 │   ├── camera/
-│   │   └── ai_camera.py           # IMX500 AI camera — EfficientDet Lite0 background thread
+│   │   └── ai_camera.py           # IMX500 AI camera — dedicated subprocess (no GIL), 4 fps detection / 15 fps stream
 │   ├── telemetry/
 │   │   └── web_server.py          # Flask server + joystick + LiDAR + patrol + camera
 │   └── tests/                     # Unit tests
@@ -276,9 +280,10 @@ Bytes  2-31  : PAYLOAD (30 bytes)
   4-5        : Accelerometer X   (int16, in mg)
   6-7        : Accelerometer Y   (int16, in mg)
   8-9        : Accelerometer Z   (int16, in mg)
-  10-11      : Gyroscope X       (int16, in 0.1°/s — BMI160 only, 0 with BNO085)
-  12-13      : Gyroscope Y       (int16, in 0.1°/s — BMI160 only, 0 with BNO085)
-  14-15      : Gyroscope Z       (int16, in 0.1°/s — BMI160 only, 0 with BNO085)
+  10-11      : Gyroscope X       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
+  12-13      : Gyroscope Y       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
+  14-15      : Gyroscope Z       (int16, in 0.1°/s — BMI160 ; with BNO085 = heading_accuracy_deg × 10,
+                                  max 1800 for 180°. Detection sentinel: gyr_x=gyr_y=0 → BNO085)
   16-19      : Latitude          (int32, in microdegrees)
   20-23      : Longitude         (int32, in microdegrees)
   24-25      : Altitude          (int16, in decimeters)
