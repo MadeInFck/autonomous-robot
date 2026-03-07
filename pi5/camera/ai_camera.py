@@ -151,10 +151,12 @@ class AiCamera:
 
     def _loop(self):
         _resume_start = None
+        _streaming_active = None   # last known streaming state (None = unknown)
         while self._running:
             if self._paused:
                 time.sleep(0.1)
                 _resume_start = None
+                _streaming_active = None
                 continue
             try:
                 # Track how long we've been waiting for the first inference output
@@ -169,6 +171,14 @@ class AiCamera:
                     _resume_start = None
 
                 streaming = self._stream_clients > 0
+
+                # Adjust camera framerate to match workload:
+                #   streaming → 10 fps (smooth video)
+                #   detection only → 2 fps (much lower CPU, still detects)
+                if streaming != _streaming_active:
+                    fps = 10 if streaming else 2
+                    self._picam2.set_controls({"FrameRate": fps})
+                    _streaming_active = streaming
 
                 if streaming:
                     # Full capture when someone is watching the stream
@@ -215,8 +225,6 @@ class AiCamera:
                     jpeg_bytes = buf.tobytes()
                 else:
                     jpeg_bytes = b''
-                    if not streaming:
-                        time.sleep(0.05)  # yield GIL between metadata-only iterations
 
                 with self._lock:
                     self._latest_jpeg = jpeg_bytes
