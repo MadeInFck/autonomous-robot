@@ -128,6 +128,7 @@ def main():
     seq = 0
     packets_sent = 0
     last_print = time.ticks_ms()
+    cal_saved = False  # BNO085: will auto-save DCD once calibrated
 
     print(f"Boucle @ {UPDATE_RATE} Hz [{imu_type}] - Ctrl+C pour arreter\n")
 
@@ -151,9 +152,13 @@ def main():
                 # Encode heading_accuracy_deg in gyr_z (0.1° units, max 1800 for 180°)
                 # Pi5 detects BNO085 by checking gyr_x == 0 and gyr_y == 0
                 gyr_z_raw = int(min(imu.heading_accuracy_deg, 180.0) * 10) if imu.valid else 1800
-                # Use BNO085 absolute yaw; fall back to GPS COG until valid
+                # Use BNO085 yaw; fall back to GPS COG until valid
                 heading   = imu.yaw if imu.valid else gps_data['course']
                 imu_valid = imu.valid
+                # Auto-save DCD once calibrated (fires once per session)
+                if not cal_saved and imu.is_calibrated():
+                    imu.save_calibration()
+                    cal_saved = True
             else:
                 imu_data  = imu.read_calibrated()
                 acc_x_mg  = convert_accel_g_to_mg(imu_data['acc_x'])

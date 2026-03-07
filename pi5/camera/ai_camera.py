@@ -76,6 +76,7 @@ class AiCamera:
         self._lock = threading.Lock()
         self._history: List[Detection] = []   # most recent first, capped at MAX_HISTORY
         self._latest_jpeg: bytes = b''        # last encoded JPEG frame for streaming
+        self._stream_clients = 0              # active MJPEG stream consumers
         self._running = False
         self._paused = False
         self._resuming = False  # True between resume() and first valid inference output
@@ -90,7 +91,7 @@ class AiCamera:
             self._picam2 = Picamera2(self._imx500.camera_num)
             config = self._picam2.create_preview_configuration(
                 main={"size": (640, 480), "format": "RGB888"},
-                controls={"FrameRate": 15},
+                controls={"FrameRate": 10},
                 buffer_count=6,
             )
             self._picam2.configure(config)
@@ -99,13 +100,16 @@ class AiCamera:
             self._error = True
 
     def start(self):
+        """Start the background thread. Camera pipeline starts paused —
+        call resume() to actually activate capture and inference."""
         if self._error:
             return
-        self._picam2.start()
+        # Start paused: picam2 not started yet, loop sleeps until resume()
+        self._paused = True
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        print("[Camera] OK")
+        print("[Camera] OK (paused — use resume() to activate)")
 
     def stop(self):
         self._running = False
@@ -146,23 +150,46 @@ class AiCamera:
         return self._resuming
 
     def _loop(self):
+        _resume_start = None
         while self._running:
             if self._paused:
                 time.sleep(0.1)
+                _resume_start = None
                 continue
             try:
-                frame = self._picam2.capture_array()
+                # Track how long we've been waiting for the first inference output
+                if self._resuming:
+                    if _resume_start is None:
+                        _resume_start = time.time()
+                    elif time.time() - _resume_start > 60:
+                        print("[Camera] Timeout démarrage IMX500")
+                        self._resuming = False
+                        _resume_start = None
+                else:
+                    _resume_start = None
+
+                streaming = self._stream_clients > 0
+
+                if streaming:
+                    # Full capture when someone is watching the stream
+                    frame = self._picam2.capture_array()
+                else:
+                    # Metadata only: skips the ~900 KB frame copy
+                    frame = None
+
                 metadata = self._picam2.capture_metadata()
+
                 outputs = self._imx500.get_outputs(metadata)
 
                 # Clear _resuming as soon as the first valid inference output arrives
                 if outputs is not None and self._resuming:
                     self._resuming = False
+                    _resume_start = None
 
                 raw = self._parse_raw(outputs) if outputs is not None else []
 
-                # Encode frame to JPEG, drawing bounding boxes if detections exist
-                if cv2 is not None:
+                # Encode JPEG only when a client is actively streaming
+                if streaming and frame is not None and cv2 is not None:
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     h_frame, w_frame = frame_bgr.shape[:2]
                     for label, conf, box in raw:
@@ -188,6 +215,8 @@ class AiCamera:
                     jpeg_bytes = buf.tobytes()
                 else:
                     jpeg_bytes = b''
+                    if not streaming:
+                        time.sleep(0.05)  # yield GIL between metadata-only iterations
 
                 with self._lock:
                     self._latest_jpeg = jpeg_bytes
@@ -258,15 +287,19 @@ class AiCamera:
 
     def generate_stream(self):
         """MJPEG generator for Flask streaming response."""
-        while True:
-            with self._lock:
-                frame = self._latest_jpeg
-            if frame:
-                yield (
-                    b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-                )
-            time.sleep(0.05)   # ~20 fps max
+        self._stream_clients += 1
+        try:
+            while True:
+                with self._lock:
+                    frame = self._latest_jpeg
+                if frame:
+                    yield (
+                        b'--frame\r\n'
+                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                    )
+                time.sleep(0.05)   # ~20 fps max
+        finally:
+            self._stream_clients -= 1
 
     def has_error(self) -> bool:
         return self._error

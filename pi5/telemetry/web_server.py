@@ -281,7 +281,7 @@ HTML_TEMPLATE = """
         <div class="camera-status">
             <span class="status-dot" id="cameraDot"></span>
             <span id="cameraStatus">--</span>
-            <button class="cam-toggle-btn" id="camToggleBtn" onclick="toggleCamera()">&#9646;&#9646; Couper</button>
+            <button class="cam-toggle-btn paused" id="camToggleBtn">&#9654; Allumer</button>
         </div>
         <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         <div class="detection-list" id="detectionList">Aucune détection</div>
@@ -881,8 +881,10 @@ HTML_TEMPLATE = """
         /* ===== Camera AI detections polling ===== */
         const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
+        let _toggleInFlight = false;
 
         function _updateToggleBtn(paused, starting) {
+            if (_toggleInFlight) return;  // don't overwrite state while toggle is in progress
             const btn = document.getElementById('camToggleBtn');
             if (!btn) return;
             if (starting) {
@@ -897,16 +899,23 @@ HTML_TEMPLATE = """
         }
 
         async function toggleCamera() {
+            if (_toggleInFlight) return;  // prevent double-tap / concurrent toggles
+            _toggleInFlight = true;
             try {
                 const btn = document.getElementById('camToggleBtn');
                 if (btn) { btn.disabled = true; btn.textContent = '…'; }
                 const res = await fetch('/api/camera/toggle', {method: 'POST'});
-                if (!res.ok) return;
-                const data = await res.json();
-                _updateToggleBtn(data.paused, false);
-                if (data.paused) closeStream();
+                if (res.ok) {
+                    const data = await res.json();
+                    _toggleInFlight = false;  // release BEFORE updating button
+                    _updateToggleBtn(data.paused, false);
+                    if (data.paused) closeStream();
+                }
             } catch(e) {}
+            finally { _toggleInFlight = false; }
         }
+
+        document.getElementById('camToggleBtn').addEventListener('click', toggleCamera);
 
         setInterval(async () => {
             try {
@@ -1299,7 +1308,7 @@ class WebServer:
         local_ip = get_local_ip()
         scheme = "https" if self._ssl_context else "http"
         url = f"{scheme}://{local_ip}:{self.port}"
-        run_kwargs = dict(host=self.host, port=self.port, debug=False, use_reloader=False)
+        run_kwargs = dict(host=self.host, port=self.port, debug=False, use_reloader=False, threaded=True)
         if self._ssl_context:
             run_kwargs['ssl_context'] = self._ssl_context
 

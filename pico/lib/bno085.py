@@ -14,13 +14,12 @@ import math
 import struct
 
 # SHTP channel numbers
-_CHAN_COMMAND    = 0
-_CHAN_EXECUTABLE = 1
-_CHAN_CONTROL    = 2  # set-feature commands go here
-_CHAN_REPORTS    = 3  # input sensor reports arrive here
+_CHAN_COMMAND  = 0
+_CHAN_CONTROL  = 2  # set-feature and command requests go here
+_CHAN_REPORTS  = 3  # input sensor reports arrive here
 
 # Sensor report IDs
-_REPORT_ROTATION_VECTOR = 0x05  # absolute heading (acc+gyr+mag fusion)
+_REPORT_ROTATION_VECTOR = 0x05  # absolute heading (accel+gyro+mag fusion, requires mag calibration)
 
 # Protocol command
 _CMD_SET_FEATURE = 0xFD
@@ -115,8 +114,13 @@ class BNO085:
                               0)         # sensor-specific config
         self._write_packet(_CHAN_CONTROL, payload)
 
+    def _send_command(self, params: bytes):
+        """Send a Command Request (0xF2) on CHAN_CONTROL. params must be 9 bytes."""
+        payload = bytes([0xF2, 0x00]) + params  # seq=0, params[0..8]
+        self._write_packet(_CHAN_CONTROL, payload)
+
     def _init(self, rate_hz: int):
-        """Power-on init: drain boot packets then enable rotation vector."""
+        """Power-on init: drain boot packets, enable dynamic calibration, enable rotation vector."""
         time.sleep(0.8)   # BNO085 needs 600-800 ms to boot (300 ms too short)
         # Drain advertisement packets sent on CHAN_EXECUTABLE at startup
         for _ in range(15):
@@ -124,6 +128,10 @@ class BNO085:
             time.sleep(0.02)
         if self._error:
             return   # write already failed during drain — abort
+        # Enable dynamic calibration for accel, gyro and magnetometer (cmd 0x07)
+        # params: [cmd, accel_cal, gyro_cal, mag_cal, 0, 0, 0, 0, 0]
+        self._send_command(bytes([0x07, 1, 1, 1, 0, 0, 0, 0, 0]))
+        time.sleep(0.05)
         self._enable_report(_REPORT_ROTATION_VECTOR, rate_hz)
         time.sleep(0.15)
         # Sanity check: can we read back anything?
@@ -183,9 +191,12 @@ class BNO085:
 
         # Quaternion → Euler angles (ZYX / aerospace convention)
         # Yaw (heading, around Z axis)
+        # BNO085 ENU frame: 0° = East, CCW-positive.
+        # Compass convention: 0° = North, CW-positive (N=0, E=90, S=180, W=270).
+        # Conversion: heading = (90 - yaw_enu) % 360
         siny = 2.0 * (w * z + x * y)
         cosy = 1.0 - 2.0 * (y * y + z * z)
-        self.yaw = math.degrees(math.atan2(siny, cosy)) % 360.0
+        self.yaw = (90.0 - math.degrees(math.atan2(siny, cosy))) % 360.0
 
         # Pitch (around Y)
         sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
@@ -201,8 +212,13 @@ class BNO085:
         self.valid = True
         return True
 
-    def is_calibrated(self, threshold_deg: float = 15.0) -> bool:
-        """True when heading accuracy is below threshold (sensor well calibrated)."""
+    def save_calibration(self):
+        """Persist current calibration to BNO085 internal flash (DCD save, cmd 0x06)."""
+        self._send_command(bytes([0x06, 0, 0, 0, 0, 0, 0, 0, 0]))
+        print("BNO085: calibration saved to flash")
+
+    def is_calibrated(self, threshold_deg: float = 10.0) -> bool:
+        """True when heading accuracy is below threshold_deg (lower = better calibrated)."""
         return self.valid and self.heading_accuracy_deg < threshold_deg
 
     def has_error(self) -> bool:

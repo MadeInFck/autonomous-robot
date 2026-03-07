@@ -59,7 +59,7 @@ class SensorData:
 
     # IMU type and calibration (BNO085 only)
     imu_type: str = 'unknown'              # 'BNO085' or 'BMI160'
-    heading_accuracy_deg: float = 180.0    # BNO085: lower = better (< 15 = calibrated)
+    heading_accuracy_deg: float = 180.0    # BNO085: lower = better (< 10 = calibrated)
     imu_calibrated: bool = False
 
     # Timestamp
@@ -332,7 +332,7 @@ class UARTReceiver:
                     if is_bno085:
                         heading_acc = frame['gyr_z']   # already in degrees (decoded as 0.1°/s units)
                         imu_type = 'BNO085'
-                        imu_calibrated = heading_acc < 15.0
+                        imu_calibrated = heading_acc < 10.0
                     else:
                         heading_acc = 180.0
                         imu_type = 'BMI160'
