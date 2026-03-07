@@ -173,10 +173,10 @@ class AiCamera:
                 streaming = self._stream_clients > 0
 
                 # Adjust camera framerate to match workload:
-                #   streaming → 10 fps (smooth video)
-                #   detection only → 2 fps (much lower CPU, still detects)
+                #   streaming → 15 fps (smooth video; robot stopped when modal is open)
+                #   detection only → 2 fps (much lower CPU, still detects during patrol)
                 if streaming != _streaming_active:
-                    fps = 10 if streaming else 2
+                    fps = 15 if streaming else 2
                     self._picam2.set_controls({"FrameRate": fps})
                     _streaming_active = streaming
 
