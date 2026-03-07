@@ -200,8 +200,9 @@ class AutonomousPilot:
             return
         if gps.timestamp != self._last_gps_timestamp:
             self._gps_pos_buffer.append((gps.latitude, gps.longitude))
-            # Only buffer valid COG — GPS sends 0.0 when stationary (COG undefined)
-            if gps.heading is not None and gps.heading > 0.1:
+            # GPS COG only: buffer when moving (COG is 0.0 and undefined at rest)
+            # BNO085 heading is handled separately below — no buffering needed
+            if not gps.imu_calibrated and gps.heading is not None and gps.heading > 0.1:
                 self._gps_hdg_buffer.append(gps.heading)
             self._last_gps_timestamp = gps.timestamp
 
@@ -213,9 +214,11 @@ class AutonomousPilot:
         avg_lat = sum(p[0] for p in self._gps_pos_buffer) / len(self._gps_pos_buffer)
         avg_lon = sum(p[1] for p in self._gps_pos_buffer) / len(self._gps_pos_buffer)
 
-        # Smoothed heading (circular mean handles 0/360 wraparound)
-        # Buffer only contains valid COG (>0.1°); empty = GPS not moving yet
-        if self._gps_hdg_buffer:
+        # Heading source: BNO085 (calibrated, instant, valid at rest including 0°=North)
+        # or GPS COG (smoothed circular mean, only valid while moving)
+        if gps.imu_calibrated:
+            avg_heading = gps.heading   # already stable, no buffer needed
+        elif self._gps_hdg_buffer:
             sin_sum = sum(math.sin(math.radians(h)) for h in self._gps_hdg_buffer)
             cos_sum = sum(math.cos(math.radians(h)) for h in self._gps_hdg_buffer)
             avg_heading = math.degrees(math.atan2(sin_sum, cos_sum)) % 360
@@ -260,10 +263,11 @@ class AutonomousPilot:
                 self.motors.stop()
             return
 
-        # 6. Heading error (dead zone filters GPS noise)
-        # No valid COG in buffer yet → go straight, no heading correction
-        if not self._gps_hdg_buffer:
-            heading_error = 0.0
+        # 6. Heading error (dead zone filters noise)
+        # With BNO085: heading always valid. With GPS COG: invalid until robot moves.
+        heading_valid = gps.imu_calibrated or bool(self._gps_hdg_buffer)
+        if not heading_valid:
+            heading_error = 0.0  # no heading yet → go straight
         else:
             heading_error = self._angle_diff(bearing, avg_heading)
             if abs(heading_error) < _HEADING_DEAD_ZONE:
