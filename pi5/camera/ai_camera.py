@@ -90,17 +90,18 @@ def _camera_worker(model_path: str, conf_threshold: float,
         picam2 = Picamera2(imx500.camera_num)
         config = picam2.create_preview_configuration(
             main={"size": (640, 480), "format": "RGB888"},
-            controls={"FrameRate": 2},
+            controls={"FrameRate": 4},
             buffer_count=6,
         )
         picam2.configure(config)
+        picam2.start()
     except Exception as e:
         result_q.put({"t": "error", "msg": str(e)})
         return
 
     result_q.put({"t": "ready"})
 
-    paused = True
+    paused = False
     streaming = False
     _fps_active = None  # last FrameRate actually set
     running = True
@@ -144,7 +145,7 @@ def _camera_worker(model_path: str, conf_threshold: float,
         try:
             # Adjust FrameRate on streaming state change
             if streaming != _fps_active:
-                picam2.set_controls({"FrameRate": 15 if streaming else 2})
+                picam2.set_controls({"FrameRate": 15 if streaming else 4})
                 _fps_active = streaming
 
             frame = picam2.capture_array() if streaming else None
@@ -254,11 +255,12 @@ class AiCamera:
             self._error = True
 
     def start(self):
-        """Spawn the camera subprocess. Starts paused — call resume() to activate."""
+        """Spawn the camera subprocess. Starts active (not paused)."""
         if self._error:
             return
         self._running = True
-        self._paused = True
+        self._paused = False
+        self._resuming = True  # waiting for first inference output
         self._process = self._ctx.Process(
             target=_camera_worker,
             args=(MODEL_PATH, self._conf_threshold, self._result_q, self._ctrl_q),
@@ -279,7 +281,7 @@ class AiCamera:
         # Drain thread: reads frames from subprocess, updates local state
         self._drain_thread = threading.Thread(target=self._drain_loop, daemon=True)
         self._drain_thread.start()
-        print("[Camera] OK (paused — use resume() to activate)")
+        print("[Camera] OK (démarrage IMX500 en cours…)")
 
     def stop(self):
         self._running = False

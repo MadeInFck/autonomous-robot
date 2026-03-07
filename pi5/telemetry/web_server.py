@@ -281,7 +281,7 @@ HTML_TEMPLATE = """
         <div class="camera-status">
             <span class="status-dot" id="cameraDot"></span>
             <span id="cameraStatus">--</span>
-            <button class="cam-toggle-btn paused" id="camToggleBtn">&#9654; Allumer</button>
+            <button class="cam-toggle-btn starting" id="camToggleBtn">&#9203; Démarrage…</button>
         </div>
         <button class="stream-btn" onclick="openStream()">&#128247; Voir le flux</button>
         <div class="detection-list" id="detectionList">Aucune détection</div>
