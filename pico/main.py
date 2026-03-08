@@ -147,7 +147,11 @@ def main():
                 for _ in range(10):
                     if not imu.update():
                         break
-                acc_x_mg = acc_y_mg = acc_z_mg = 0
+                # Encode pitch/roll in acc_x/acc_y (millidegrees, same 1000× scaling as mg)
+                # acc_z kept at 0 — Pi5 reads acc_x/1000 = pitch_deg, acc_y/1000 = roll_deg
+                acc_x_mg = int(imu.pitch * 1000) if imu.valid else 0
+                acc_y_mg = int(imu.roll  * 1000) if imu.valid else 0
+                acc_z_mg = 0
                 gyr_x_raw = gyr_y_raw = 0
                 # Encode heading_accuracy_deg in gyr_z (0.1° units, max 1800 for 180°)
                 # Pi5 detects BNO085 by checking gyr_x == 0 and gyr_y == 0

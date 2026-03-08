@@ -87,6 +87,10 @@ class SensorData:
     heading_accuracy_deg: float = 180.0    # BNO085: lower = better (< 10 = calibrated)
     imu_calibrated: bool = False
 
+    # Orientation (BNO085: from sensor fusion; BMI160: 0.0)
+    pitch: float = 0.0  # degrees
+    roll: float = 0.0   # degrees
+
     # Timestamp
     timestamp: float = 0.0
 
@@ -381,12 +385,20 @@ class UARTReceiver:
                         imu_type = 'BMI160'
                         imu_calibrated = False
 
+                    # BNO085 encodes pitch/roll in acc_x/acc_y (millidegrees → degrees via /1000)
+                    if is_bno085:
+                        pitch = frame['acc_x']   # already divided by 1000 → degrees
+                        roll  = frame['acc_y']
+                    else:
+                        pitch = 0.0
+                        roll  = 0.0
+
                     # Convert to SensorData
                     sensor_data = SensorData(
                         sequence=frame['seq'],
-                        acc_x=frame['acc_x'],
-                        acc_y=frame['acc_y'],
-                        acc_z=frame['acc_z'],
+                        acc_x=0.0 if is_bno085 else frame['acc_x'],
+                        acc_y=0.0 if is_bno085 else frame['acc_y'],
+                        acc_z=0.0 if is_bno085 else frame['acc_z'],
                         gyr_x=frame['gyr_x'],
                         gyr_y=frame['gyr_y'],
                         gyr_z=0.0 if is_bno085 else frame['gyr_z'],
@@ -401,6 +413,8 @@ class UARTReceiver:
                         imu_type=imu_type,
                         heading_accuracy_deg=heading_acc,
                         imu_calibrated=imu_calibrated,
+                        pitch=pitch,
+                        roll=roll,
                         timestamp=time.time()
                     )
 

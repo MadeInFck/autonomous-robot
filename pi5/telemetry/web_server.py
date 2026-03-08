@@ -436,7 +436,12 @@ HTML_TEMPLATE = """
                 document.getElementById('accX').textContent = (d.acc_x !== undefined) ? d.acc_x.toFixed(2) : '--';
                 document.getElementById('accY').textContent = (d.acc_y !== undefined) ? d.acc_y.toFixed(2) : '--';
                 document.getElementById('accZ').textContent = (d.acc_z !== undefined) ? d.acc_z.toFixed(2) : '--';
-                if (d.acc_x !== undefined && d.acc_y !== undefined && d.acc_z !== undefined) {
+                if (d.imu_type === 'BNO085' && d.pitch !== undefined && d.roll !== undefined) {
+                    // BNO085: pitch/roll from sensor fusion (accurate at rest too)
+                    document.getElementById('pitch').textContent = d.pitch.toFixed(1) + 'deg';
+                    document.getElementById('roll').textContent = d.roll.toFixed(1) + 'deg';
+                } else if (d.acc_x !== undefined && d.acc_y !== undefined && d.acc_z !== undefined) {
+                    // BMI160: derive pitch/roll from accelerometer
                     const pitch = Math.atan2(d.acc_y, Math.sqrt(d.acc_x*d.acc_x + d.acc_z*d.acc_z)) * 180 / Math.PI;
                     const roll = Math.atan2(-d.acc_x, d.acc_z) * 180 / Math.PI;
                     document.getElementById('pitch').textContent = pitch.toFixed(1) + 'deg';
