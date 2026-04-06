@@ -59,6 +59,7 @@ class AutonomousPilot:
         patrol_speed: int = 40,
         obstacle_distance_mm: float = 800,
         loop_patrol: bool = True,
+        heading_offset_deg: float = 45.0,
     ):
         self.motors = motor_controller
         self.sensors = sensor_receiver
@@ -66,6 +67,7 @@ class AutonomousPilot:
         self.patrol = patrol_manager
         self.patrol_speed = patrol_speed
         self.loop_patrol = loop_patrol
+        self.heading_offset_deg = heading_offset_deg  # added to BNO085 heading (real = sensor + offset)
 
         # Sub-modules
         self.detector = ObstacleDetector(min_quality=10)
@@ -217,7 +219,7 @@ class AutonomousPilot:
         # Heading source: BNO085 (calibrated, instant, valid at rest including 0°=North)
         # or GPS COG (smoothed circular mean, only valid while moving)
         if gps.imu_calibrated:
-            avg_heading = gps.heading   # already stable, no buffer needed
+            avg_heading = (gps.heading + self.heading_offset_deg) % 360
         elif self._gps_hdg_buffer:
             sin_sum = sum(math.sin(math.radians(h)) for h in self._gps_hdg_buffer)
             cos_sum = sum(math.cos(math.radians(h)) for h in self._gps_hdg_buffer)

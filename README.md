@@ -47,7 +47,7 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 | GPIO9 / RXD3 (21)    | GP0 (1)       | Pi5 RX ← Pico TX  |
 | GND (20)             | GND (3)       | Common ground      |
 
-### GPS NEO-6M → Pico (9600 baud)
+### GPS NEO-6M → Pico (115200 baud)
 
 | NEO-6M | Pico (pin)    | Description |
 |--------|---------------|-------------|
