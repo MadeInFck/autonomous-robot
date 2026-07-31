@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Lock
 from typing import Callable, Optional
 
 from rplidarc1 import RPLidar
@@ -42,7 +42,10 @@ class LidarScanner:
         self._thread: Optional[Thread] = None
         self._running = False
 
-        # Current scan accumulation
+        # Current scan accumulation — guarded by _accum_lock because
+        # process_incoming() is called from both the main loop and the
+        # pilot control thread.
+        self._accum_lock = Lock()
         self._current_points: list[ScanPoint] = []
         self._last_angle: float = -1.0
 
@@ -91,14 +94,15 @@ class LidarScanner:
     def process_incoming(self):
         """Processes points received from the asyncio thread and accumulates them into scans.
 
-        Call this method regularly from the main thread.
+        Thread-safe: may be called from the main loop and the pilot thread.
         """
-        while True:
-            try:
-                point_dict = self._py_queue.get_nowait()
-            except Empty:
-                break
-            self._accumulate_point(point_dict)
+        with self._accum_lock:
+            while True:
+                try:
+                    point_dict = self._py_queue.get_nowait()
+                except Empty:
+                    break
+                self._accumulate_point(point_dict)
 
     def _accumulate_point(self, point_dict: dict):
         """Adds a point to the current scan. Detects new revolutions."""

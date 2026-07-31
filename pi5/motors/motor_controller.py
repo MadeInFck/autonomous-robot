@@ -15,8 +15,11 @@ Each motor has 2 pins:
 """
 
 import time
+import logging
 import threading
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # Import gpiod for Pi5
 try:
@@ -25,7 +28,7 @@ try:
     HAS_GPIO = True
 except ImportError:
     HAS_GPIO = False
-    print("Warning: gpiod non disponible - mode simulation")
+    logger.warning("gpiod non disponible - mode simulation")
 
 
 @dataclass
@@ -67,13 +70,14 @@ class MecanumController:
         self._pwm_thread = None
         self._pwm_running = False
         self._pwm_states = {}  # {motor: {'speed': 0-100, 'forward': True}}
+        self._pin_values = {}  # {pin: last written Value} — skip redundant syscalls
 
         self._init_gpio()
 
     def _init_gpio(self):
         """Initializes GPIO pins with gpiod"""
         if not HAS_GPIO:
-            print("Mode simulation - pas de GPIO")
+            logger.info("Mode simulation - pas de GPIO")
             return
 
         try:
@@ -95,17 +99,19 @@ class MecanumController:
                 config=gpio_config
             )
 
-            print("GPIO initialisés (gpiod)")
-            print(f"  FL: GPIO{self.config['FL'].ia}/{self.config['FL'].ib}")
-            print(f"  FR: GPIO{self.config['FR'].ia}/{self.config['FR'].ib}")
-            print(f"  RL: GPIO{self.config['RL'].ia}/{self.config['RL'].ib}")
-            print(f"  RR: GPIO{self.config['RR'].ia}/{self.config['RR'].ib}")
+            logger.info(
+                "GPIO initialisés (gpiod) — "
+                f"FL: {self.config['FL'].ia}/{self.config['FL'].ib}, "
+                f"FR: {self.config['FR'].ia}/{self.config['FR'].ib}, "
+                f"RL: {self.config['RL'].ia}/{self.config['RL'].ib}, "
+                f"RR: {self.config['RR'].ia}/{self.config['RR'].ib}"
+            )
 
             # Start the software PWM thread
             self._start_pwm_thread()
 
         except Exception as e:
-            print(f"Erreur init GPIO: {e}")
+            logger.error(f"Erreur init GPIO: {e}")
             self.request = None
 
     def _start_pwm_thread(self):
@@ -114,13 +120,29 @@ class MecanumController:
         self._pwm_thread = threading.Thread(target=self._pwm_loop, daemon=True)
         self._pwm_thread.start()
 
+    # 20 steps/cycle = 5% duty-cycle resolution, matching the UI's speed
+    # increment (+/- 5%). period/PWM_STEPS must stay a safe sleep interval
+    # for Python + gpiod syscall overhead (0.5 ms here).
+    PWM_HZ = 100
+    PWM_STEPS = 20
+
+    def _write_pin(self, pin: int, value):
+        """Writes a GPIO only when its state changes.
+
+        The PWM loop revisits every pin 2000x/s; without this cache that is
+        ~16000 redundant gpiod syscalls per second at idle.
+        """
+        if self._pin_values.get(pin) is not value:
+            self.request.set_value(pin, value)
+            self._pin_values[pin] = value
+
     def _pwm_loop(self):
-        """Software PWM loop - 100 Hz"""
-        period = 0.01  # 10ms = 100 Hz
-        step = 0.001   # 1ms steps (100 steps per period = 0-100%)
+        """Software PWM loop - 100 Hz (PWM_STEPS steps of period/PWM_STEPS each)"""
+        period = 1.0 / self.PWM_HZ         # 10ms
+        step = period / self.PWM_STEPS     # 0.5ms
 
         while self._pwm_running:
-            for i in range(100):  # 100 steps per cycle
+            for i in range(self.PWM_STEPS):
                 if not self._pwm_running:
                     break
 
@@ -133,22 +155,24 @@ class MecanumController:
                         if self.request is None:
                             continue
 
+                        on_steps = round(speed / 100 * self.PWM_STEPS)
+
                         if speed == 0:
                             # Stop
-                            self.request.set_value(pins.ia, Value.INACTIVE)
-                            self.request.set_value(pins.ib, Value.INACTIVE)
-                        elif i < speed:
+                            self._write_pin(pins.ia, Value.INACTIVE)
+                            self._write_pin(pins.ib, Value.INACTIVE)
+                        elif i < on_steps:
                             # ON phase
                             if forward:
-                                self.request.set_value(pins.ia, Value.ACTIVE)
-                                self.request.set_value(pins.ib, Value.INACTIVE)
+                                self._write_pin(pins.ia, Value.ACTIVE)
+                                self._write_pin(pins.ib, Value.INACTIVE)
                             else:
-                                self.request.set_value(pins.ia, Value.INACTIVE)
-                                self.request.set_value(pins.ib, Value.ACTIVE)
+                                self._write_pin(pins.ia, Value.INACTIVE)
+                                self._write_pin(pins.ib, Value.ACTIVE)
                         else:
                             # OFF phase (for PWM)
-                            self.request.set_value(pins.ia, Value.INACTIVE)
-                            self.request.set_value(pins.ib, Value.INACTIVE)
+                            self._write_pin(pins.ia, Value.INACTIVE)
+                            self._write_pin(pins.ib, Value.INACTIVE)
 
                 time.sleep(step)
 
@@ -244,6 +268,16 @@ class MecanumController:
             self._pwm_thread.join(timeout=1)
 
         self.stop()
+
+        # PWM thread is dead: drive every pin LOW ourselves so the H-bridge
+        # inputs are not left ACTIVE (or floating) between join and release.
+        if self.request is not None:
+            for pins in self.config.values():
+                try:
+                    self.request.set_value(pins.ia, Value.INACTIVE)
+                    self.request.set_value(pins.ib, Value.INACTIVE)
+                except Exception:
+                    pass
 
         if self.request is not None:
             try:

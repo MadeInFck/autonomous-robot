@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
     print("=== Test GPS Reader ===")
 
-    uart = UART(1, baudrate=9600, tx=Pin(4), rx=Pin(5))
+    uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
     parser = MicropyGPS(local_offset=0, location_formatting='dd')
     gps = GPSReader(uart, parser)
 

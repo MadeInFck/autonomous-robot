@@ -10,12 +10,15 @@ import struct
 import time
 import threading
 import json
+import logging
 import os
 import serial
 from dataclasses import dataclass
 from typing import Optional, Callable
 from queue import Queue, Empty
 from enum import Enum, auto
+
+logger = logging.getLogger(__name__)
 
 # Path where BNO085 calibration state is persisted across reboots
 _CAL_STATE_PATH = os.path.expanduser('~/.config/robot/imu_cal_state.json')
@@ -46,6 +49,13 @@ STX = 0x02
 ETX = 0x03
 PAYLOAD_LEN = 30
 FRAME_LEN = 34  # STX + LEN + PAYLOAD + CRC + ETX
+
+# fix_quality byte layout (must match pico/lib/protocole.py):
+#   bits 0-3: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
+#   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (millideg),
+#             gyr_z carries heading_accuracy (0.1 deg units)
+FIX_QUALITY_MASK = 0x0F
+FLAG_IMU_BNO085 = 0x80
 
 
 class State(Enum):
@@ -116,7 +126,7 @@ def parse_payload(payload: bytes) -> dict:
     Decodes the payload into sensor data
 
     Args:
-        payload: 28 bytes of data
+        payload: 30 bytes of data (PAYLOAD_LEN)
 
     Returns:
         Dict with all decoded data
@@ -151,7 +161,9 @@ def parse_payload(payload: bytes) -> dict:
         'cap': cap / 100.0,
         # GPS - Satellites and fix
         'satellites': satellites,
-        'fix_quality': fix_quality,
+        'fix_quality': fix_quality & FIX_QUALITY_MASK,
+        # Flags (high bits of the fix_quality byte)
+        'imu_is_bno085': bool(fix_quality & FLAG_IMU_BNO085),
     }
 
 
@@ -303,11 +315,11 @@ class UARTReceiver:
                 stopbits=serial.STOPBITS_ONE,
                 timeout=0.1
             )
-            print(f"UART ouvert: {self.port} @ {self.baudrate} baud")
+            logger.info(f"UART ouvert: {self.port} @ {self.baudrate} baud")
             return True
 
         except Exception as e:
-            print(f"Erreur ouverture UART: {e}")
+            logger.error(f"Erreur ouverture UART: {e}")
             return False
 
     def close(self):
@@ -334,7 +346,7 @@ class UARTReceiver:
         self._running = True
         self._thread = threading.Thread(target=self._receive_loop, daemon=True)
         self._thread.start()
-        print("Réception UART démarrée (async)")
+        logger.info("Réception UART démarrée (async)")
 
     def _receive_loop(self):
         """Reception loop (thread)"""
@@ -361,9 +373,9 @@ class UARTReceiver:
                     self._check_sequence(frame['seq'])
                     self._packets_received += 1
 
-                    # Detect BNO085: gyr_x and gyr_y are always 0; gyr_z encodes
-                    # heading_accuracy_deg * 10 (0.1° units, max 1800 for 180°)
-                    is_bno085 = frame['gyr_x'] == 0.0 and frame['gyr_y'] == 0.0
+                    # BNO085 flagged explicitly (bit 7 of fix_quality byte);
+                    # gyr_z then encodes heading_accuracy_deg * 10 (0.1° units)
+                    is_bno085 = frame['imu_is_bno085']
                     if is_bno085:
                         heading_acc = frame['gyr_z']   # already in degrees (decoded as 0.1°/s units)
                         imu_type = 'BNO085'
@@ -441,7 +453,7 @@ class UARTReceiver:
                 time.sleep(0.01)
 
             except Exception as e:
-                print(f"Erreur réception: {e}")
+                logger.error(f"Erreur réception: {e}")
                 time.sleep(0.1)
 
     def _check_sequence(self, current_seq: int):
@@ -455,7 +467,12 @@ class UARTReceiver:
 
     def read_sensor_data(self, timeout: float = 1.0) -> Optional[SensorData]:
         """
-        Reads sensor data
+        Reads sensor data from the internal queue.
+
+        Only useful when start_async() was called without a callback (e.g. the
+        standalone diagnostic mode below via `python uart_receiver.py`).
+        In production, RobotApp always passes a callback, so the queue stays
+        empty — use get_last_data() instead.
 
         Args:
             timeout: Timeout in seconds

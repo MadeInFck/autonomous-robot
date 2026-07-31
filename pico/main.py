@@ -28,7 +28,8 @@ from lib.protocole import (
     convert_coord_to_microdeg,
     convert_alt_m_to_dm,
     convert_speed_ms_to_cms,
-    convert_heading_to_raw
+    convert_heading_to_raw,
+    FLAG_IMU_BNO085
 )
 from lib.bmi160_raw import BMI160Raw
 from lib.gps_reader import GPSReader
@@ -189,7 +190,8 @@ def main():
                 vitesse=convert_speed_ms_to_cms(gps_data['speed']),
                 cap=convert_heading_to_raw(heading),
                 satellites=gps_data['satellites'],
-                fix_quality=1 if gps_data['valid'] else 0
+                fix_quality=(1 if gps_data['valid'] else 0)
+                            | (FLAG_IMU_BNO085 if imu_type == 'BNO085' else 0)
             )
 
             # Send

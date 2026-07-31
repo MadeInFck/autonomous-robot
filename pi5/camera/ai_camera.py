@@ -7,10 +7,13 @@ Public API is unchanged from the threading version.
 """
 
 import time
+import logging
 import threading
 import multiprocessing as mp
 from dataclasses import dataclass
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 try:
     import cv2
@@ -251,7 +254,7 @@ class AiCamera:
             if importlib.util.find_spec('picamera2') is None:
                 raise ImportError("picamera2 not found")
         except ImportError as e:
-            print(f"[Camera] Init error: {e}")
+            logger.error(f"Init error: {e}")
             self._error = True
 
     def start(self):
@@ -271,17 +274,17 @@ class AiCamera:
         try:
             msg = self._result_q.get(timeout=60)
             if msg.get("t") == "error":
-                print(f"[Camera] Subprocess error: {msg.get('msg')}")
+                logger.error(f"Subprocess error: {msg.get('msg')}")
                 self._error = True
                 return
         except Exception:
-            print("[Camera] Subprocess did not respond")
+            logger.error("Subprocess did not respond")
             self._error = True
             return
         # Drain thread: reads frames from subprocess, updates local state
         self._drain_thread = threading.Thread(target=self._drain_loop, daemon=True)
         self._drain_thread.start()
-        print("[Camera] OK (démarrage IMX500 en cours…)")
+        logger.info("OK (démarrage IMX500 en cours…)")
 
     def stop(self):
         self._running = False
@@ -341,7 +344,7 @@ class AiCamera:
                 if _resume_start is None:
                     _resume_start = time.time()
                 elif time.time() - _resume_start > 60:
-                    print("[Camera] Timeout démarrage IMX500")
+                    logger.warning("Timeout démarrage IMX500")
                     self._resuming = False
                     _resume_start = None
 

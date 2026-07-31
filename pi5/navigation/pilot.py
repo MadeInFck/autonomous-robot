@@ -32,6 +32,7 @@ class PilotState(Enum):
 
 # --- Navigation constants ---
 _HEADING_DEAD_ZONE = 10.0  # deg  — ignore small errors (GPS noise)
+_GPS_STALE_S = 2.0  # s — max age of the last UART frame before failsafe stop
 
 
 class AutonomousPilot:
@@ -60,6 +61,10 @@ class AutonomousPilot:
         obstacle_distance_mm: float = 800,
         loop_patrol: bool = True,
         heading_offset_deg: float = 45.0,
+        min_quality: int = 10,
+        pid_kp: float = 1.0,
+        pid_ki: float = 0.05,
+        pid_kd: float = 0.1,
     ):
         self.motors = motor_controller
         self.sensors = sensor_receiver
@@ -70,14 +75,14 @@ class AutonomousPilot:
         self.heading_offset_deg = heading_offset_deg  # added to BNO085 heading (real = sensor + offset)
 
         # Sub-modules
-        self.detector = ObstacleDetector(min_quality=10)
+        self.detector = ObstacleDetector(min_quality=min_quality)
         self.tracker = ObstacleTracker()
         self.avoider = ObstacleAvoider(obstacle_distance_mm=obstacle_distance_mm)
 
         # PID for heading control (output = omega for motors)
         # Setpoint will be the bearing to the waypoint
         self._heading_pid = PID(
-            Kp=1.0, Ki=0.05, Kd=0.1,
+            Kp=pid_kp, Ki=pid_ki, Kd=pid_kd,
             setpoint=0,
             output_limits=(-1.0, 1.0),
         )
@@ -102,6 +107,17 @@ class AutonomousPilot:
 
         # Last lidar detection (for the web API)
         self._last_detection = None
+
+        # Liveness heartbeat, refreshed at every control cycle. The web
+        # watchdog reads it to detect a dead control thread — in that state it
+        # is the only thing standing between a crash and motors stuck on their
+        # last command (see control_heartbeat_age).
+        self._last_step_time: float = 0.0
+
+        # Failsafe: True while the last UART frame is older than _GPS_STALE_S
+        # (Pico dead, cable unplugged). Without this check the pilot would keep
+        # navigating on a frozen position forever.
+        self._gps_stale = False
 
         # Live navigation debug values (exposed via get_status for the web UI)
         self._dbg_bearing: float = 0.0        # bearing to active WP (deg)
@@ -128,6 +144,7 @@ class AutonomousPilot:
             "waypoint_index": self.patrol.current_index,
             "waypoint_count": self.patrol.count,
             "loop": self.loop_patrol,
+            "gps_stale": self._gps_stale,
         }
 
         if target and gps and gps.has_fix:
@@ -151,6 +168,16 @@ class AutonomousPilot:
         """Returns the last DetectionResult (for the web API)."""
         return self._last_detection
 
+    def control_heartbeat_age(self) -> float:
+        """Seconds since the control loop last completed a cycle.
+
+        Returns 0.0 when no loop is expected to run (idle, patrol finished),
+        so a watchdog polling this can treat any large value as a fault.
+        """
+        if not self._running or self._last_step_time == 0.0:
+            return 0.0
+        return time.time() - self._last_step_time
+
     def start(self):
         """Starts the autonomous patrol."""
         if self._running:
@@ -164,6 +191,9 @@ class AutonomousPilot:
         self._gps_pos_buffer.clear()
         self._gps_hdg_buffer.clear()
         self._last_gps_timestamp = 0.0
+        # Prime the heartbeat before the thread exists: otherwise the watchdog
+        # would see a stale value during the first cycles.
+        self._last_step_time = time.time()
         self._running = True
         with self._lock:
             self._state = PilotState.NAVIGATING
@@ -175,6 +205,7 @@ class AutonomousPilot:
     def stop(self):
         """Stops the patrol."""
         self._running = False
+        self._last_step_time = 0.0
         if self._thread:
             self._thread.join(timeout=2)
         if self.motors:
@@ -186,6 +217,7 @@ class AutonomousPilot:
     def _control_loop(self):
         """Main control loop (~5 Hz)."""
         while self._running:
+            self._last_step_time = time.time()
             try:
                 self._control_step()
             except Exception as e:
@@ -196,7 +228,14 @@ class AutonomousPilot:
         """One step of the control loop."""
         # 1. Read sensors and feed GPS smoothing buffers (unique readings only)
         gps = self.sensors.get_last_data() if self.sensors else None
-        if gps is None or not gps.has_fix:
+        stale = gps is not None and (time.time() - gps.timestamp) > _GPS_STALE_S
+        if stale != self._gps_stale:
+            if stale:
+                logger.warning("Donnees UART/GPS perimees (Pico muet ?) — arret failsafe")
+            else:
+                logger.info("Donnees UART/GPS de nouveau fraiches")
+            self._gps_stale = stale
+        if gps is None or stale or not gps.has_fix:
             if self.motors:
                 self.motors.stop()
             return
@@ -305,10 +344,10 @@ class AutonomousPilot:
     def _on_waypoint_reached(self):
         """Called when a waypoint is reached."""
         logger.info(f"Waypoint {self.patrol.current_index} atteint!")
-        # Stop motors and reset PID integral to avoid windup on the new leg
+        # Stop motors and reset PID state to avoid windup / derivative kick on the new leg
         if self.motors:
             self.motors.stop()
-        self._heading_pid._integral = 0
+        self._heading_pid.reset()
         # Clear stale heading buffer: heading was computed while moving toward
         # the old waypoint; it's no longer valid for the next leg.
         self._gps_hdg_buffer.clear()

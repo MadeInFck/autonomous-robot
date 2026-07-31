@@ -27,10 +27,12 @@ from navigation.patrol_manager import PatrolManager
 from sensors.uart_receiver import SensorData
 
 
-def make_sensor_data(lat=48.8566, lon=2.3522, heading=0, has_fix=True):
+def make_sensor_data(lat=48.8566, lon=2.3522, heading=0, has_fix=True,
+                     timestamp=None):
     return SensorData(
         latitude=lat, longitude=lon, heading=heading,
         has_fix=has_fix, satellites=8,
+        timestamp=time.time() if timestamp is None else timestamp,
     )
 
 
@@ -87,6 +89,28 @@ class TestPilotStates:
         pilot.start()
         assert pilot.state == PilotState.IDLE
 
+    def test_stale_gps_stops_motors(self, mock_components):
+        """UART dead: last frame frozen — failsafe must stop, never navigate."""
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data(
+            timestamp=time.time() - 10)
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot.start()
+        time.sleep(0.3)
+        motors.stop.assert_called()
+        motors.move.assert_not_called()
+        assert pilot.get_status()["gps_stale"] is True
+        pilot.stop()
+
+    def test_fresh_gps_not_stale(self, mock_components):
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot.start()
+        time.sleep(0.3)
+        assert pilot.get_status()["gps_stale"] is False
+        pilot.stop()
+
 
 class TestPilotStatus:
     def test_get_status(self, mock_components):
@@ -98,6 +122,42 @@ class TestPilotStatus:
         assert status["state"] == "IDLE"
         assert status["waypoint_count"] == 2
         assert status["waypoint_index"] == 0
+
+
+class TestControlHeartbeat:
+    """The web watchdog uses this to detect a dead control thread."""
+
+    def test_idle_pilot_reports_no_age(self, mock_components):
+        motors, sensors, lidar, pm = mock_components
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        assert pilot.control_heartbeat_age() == 0.0
+
+    def test_running_pilot_stays_fresh(self, mock_components):
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot.start()
+        try:
+            time.sleep(0.3)  # a few cycles at 5 Hz
+            assert pilot.control_heartbeat_age() < 1.0
+        finally:
+            pilot.stop()
+
+    def test_frozen_loop_ages(self, mock_components):
+        """Simulates a control thread that stopped cycling."""
+        motors, sensors, lidar, pm = mock_components
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot._running = True
+        pilot._last_step_time = time.time() - 30
+        assert pilot.control_heartbeat_age() > 29
+
+    def test_stop_clears_heartbeat(self, mock_components):
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot.start()
+        pilot.stop()
+        assert pilot.control_heartbeat_age() == 0.0
 
 
 class TestAngleDiff:

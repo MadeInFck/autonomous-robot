@@ -8,8 +8,28 @@
 set -e
 
 SSID="RobotPatroller"
-PASSPHRASE="${1:-RobotPatroller2025}"
+# No default passphrase: a published default would let anyone in range
+# connect to the AP and reach the robot.
+PASSPHRASE="${1:?Usage: sudo bash scripts/setup_ap.sh \"YourPassword\" [\"HomeSSID\"] — passphrase obligatoire (15+ caracteres)}"
 HOME_SSID="${2}"
+
+# WPA2-PSK handshakes can be captured from a distance and cracked offline at
+# no cost: the passphrase length is the only real protection. 15+ random
+# characters puts a dictionary/brute-force attack out of practical reach.
+MIN_PSK_LEN=15
+PSK_LEN=${#PASSPHRASE}
+if [ "$PSK_LEN" -lt "$MIN_PSK_LEN" ]; then
+    echo "ERREUR: passphrase de $PSK_LEN caracteres, minimum $MIN_PSK_LEN requis." >&2
+    echo "Un handshake WPA2 capture se casse hors-ligne : la longueur est la seule defense." >&2
+    echo "Generer une passphrase solide :  openssl rand -base64 18" >&2
+    echo "(pour forcer malgre tout : ALLOW_SHORT_PSK=1 sudo -E bash scripts/setup_ap.sh ...)" >&2
+    [ "${ALLOW_SHORT_PSK}" = "1" ] || exit 1
+    echo "ALLOW_SHORT_PSK=1 : passphrase courte acceptee malgre l'avertissement." >&2
+fi
+if [ "$PSK_LEN" -gt 63 ]; then
+    echo "ERREUR: passphrase de $PSK_LEN caracteres, maximum 63 (limite WPA2-PSK)." >&2
+    exit 1
+fi
 AP_IP="192.168.4.1"
 CON_NAME="RobotAP"
 COUNTRY="FR"

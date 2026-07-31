@@ -117,7 +117,7 @@ Top view of the robot:
 | RL     | 24       | 25       |
 | RR     | 5        | 6        |
 
-Software PWM 100 Hz via `gpiod`. Motor power supply: 5V.
+Software PWM 100 Hz via `gpiod`. Motor power supply: 5V, **5A minimum** (4 mecanum motors under load draw more than a 4A supply can provide — insufficient amperage causes brownouts/resets that can look like software bugs).
 
 ## Installation
 
@@ -138,6 +138,13 @@ The script automatically configures:
 - System dependencies (`python3-lgpio`, `libgpiod-dev`, etc.)
 - Python dependencies (`flask`, `pyserial`, `gpiod`, etc.)
 - GPIO and serial permissions (`gpio` and `dialout` groups)
+- Sudoers rule `/etc/sudoers.d/robot-power` restricted to `shutdown now` and
+  `reboot` only, used by the web UI power buttons (never grant a broad
+  NOPASSWD to the user running the server)
+
+Authentication is required by default: the server refuses to start if
+`config/secrets.yaml` is missing or invalid (copy `config/secrets.yaml.example`),
+unless `--no-auth` is passed explicitly.
 
 ### Raspberry Pi Pico
 
@@ -283,14 +290,16 @@ Bytes  2-31  : PAYLOAD (30 bytes)
   10-11      : Gyroscope X       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
   12-13      : Gyroscope Y       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
   14-15      : Gyroscope Z       (int16, in 0.1°/s — BMI160 ; with BNO085 = heading_accuracy_deg × 10,
-                                  max 1800 for 180°. Detection sentinel: gyr_x=gyr_y=0 → BNO085)
+                                  max 1800 for 180°)
   16-19      : Latitude          (int32, in microdegrees)
   20-23      : Longitude         (int32, in microdegrees)
   24-25      : Altitude          (int16, in decimeters)
   26-27      : Speed             (uint16, in cm/s)
   28-29      : Heading           (uint16, in 0.01° — GPS COG with BMI160, BNO085 yaw with BNO085)
   30         : Satellites        (uint8, satellite count)
-  31         : Fix quality       (uint8, 0=no fix, 1=GPS, 2=DGPS)
+  31         : Fix quality/flags (uint8 — bits 0-3: 0=no fix, 1=GPS, 2=DGPS;
+                                  bit 7: IMU is BNO085. Both sides must be
+                                  deployed together when this byte changes)
 Byte   32    : CRC-8 (polynomial 0x07, over payload)
 Byte   33    : ETX (0x03)
 ```

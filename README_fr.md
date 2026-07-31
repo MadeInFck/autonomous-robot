@@ -118,7 +118,7 @@ Vue de dessus du robot:
 | RL     | 24       | 25       |
 | RR     | 5        | 6        |
 
-PWM logiciel 100 Hz via `gpiod`. Alimentation moteurs : 5V.
+PWM logiciel 100 Hz via `gpiod`. Alimentation moteurs : 5V, **5A minimum** (les 4 moteurs mecanum en charge peuvent dépasser ce qu'une alimentation 4A peut fournir — un ampérage insuffisant provoque des brownouts/resets qui peuvent ressembler à des bugs logiciels).
 
 ## Installation
 
@@ -139,6 +139,13 @@ Le script configure automatiquement :
 - Dépendances système (`python3-lgpio`, `libgpiod-dev`, etc.)
 - Dépendances Python (`flask`, `pyserial`, `gpiod`, etc.)
 - Permissions GPIO et série (groupes `gpio` et `dialout`)
+- Règle sudoers `/etc/sudoers.d/robot-power` limitée à `shutdown now` et
+  `reboot` uniquement, utilisée par les boutons d'extinction de l'interface
+  web (ne jamais donner un NOPASSWD large à l'utilisateur du serveur)
+
+L'authentification est exigée par défaut : le serveur refuse de démarrer si
+`config/secrets.yaml` est absent ou invalide (copier `config/secrets.yaml.example`),
+sauf si `--no-auth` est passé explicitement.
 
 ### Raspberry Pi Pico
 
@@ -284,14 +291,16 @@ Octets 2-31  : PAYLOAD (30 bytes)
   10-11      : Gyroscope X       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
   12-13      : Gyroscope Y       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
   14-15      : Gyroscope Z       (int16, en 0.1°/s — BMI160 ; avec BNO085 = heading_accuracy_deg × 10,
-                                  max 1800 pour 180°. Sentinel de détection : gyr_x=gyr_y=0 → BNO085)
+                                  max 1800 pour 180°)
   16-19      : Latitude          (int32, en microdegrés)
   20-23      : Longitude         (int32, en microdegrés)
   24-25      : Altitude          (int16, en décimètres)
   26-27      : Vitesse           (uint16, en cm/s)
   28-29      : Cap               (uint16, en 0.01° — GPS COG avec BMI160, yaw BNO085 avec BNO085)
   30         : Satellites        (uint8, nombre de satellites)
-  31         : Fix qualité       (uint8, 0=no fix, 1=GPS, 2=DGPS)
+  31         : Fix qualité/flags (uint8 — bits 0-3 : 0=no fix, 1=GPS, 2=DGPS ;
+                                  bit 7 : IMU = BNO085. Redéployer Pico et Pi5
+                                  ensemble si cet octet évolue)
 Octet  32    : CRC-8 (polynôme 0x07, sur le payload)
 Octet  33    : ETX (0x03)
 ```

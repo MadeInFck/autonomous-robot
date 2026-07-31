@@ -12,9 +12,14 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sensors'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'pico', 'lib'))
 
-from uart_receiver import calc_crc8 as pi5_crc8, parse_payload, PAYLOAD_LEN, STX, ETX
+from uart_receiver import (
+    calc_crc8 as pi5_crc8, parse_payload, PAYLOAD_LEN, STX, ETX,
+    FLAG_IMU_BNO085 as PI5_FLAG_BNO085,
+    FIX_QUALITY_MASK as PI5_FIX_MASK,
+)
 from protocole import (
     calc_crc8 as pico_crc8, build_frame, PAYLOAD_LEN as PICO_PAYLOAD_LEN,
+    FLAG_IMU_BNO085, FIX_QUALITY_MASK,
     convert_accel_g_to_mg, convert_gyro_dps_to_raw,
     convert_coord_to_microdeg, convert_alt_m_to_dm,
     convert_speed_ms_to_cms, convert_heading_to_raw,
@@ -64,6 +69,11 @@ class TestConstantes:
     def test_stx_etx_values(self):
         assert STX == 0x02
         assert ETX == 0x03
+
+    def test_flags_match(self):
+        """Flag constants must be identical on both sides"""
+        assert FLAG_IMU_BNO085 == PI5_FLAG_BNO085 == 0x80
+        assert FIX_QUALITY_MASK == PI5_FIX_MASK == 0x0F
 
 
 # ===== Conversions =====
@@ -220,3 +230,29 @@ class TestRoundTrip:
         payload = frame[2:-2]
         data = parse_payload(payload)
         assert abs(data['vitesse_ms'] - 655.35) < 0.01
+
+    def test_bno085_flag_round_trip(self):
+        """BNO085 flag (bit 7) must survive the round trip and not pollute fix"""
+        frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            satellites=6, fix_quality=1 | FLAG_IMU_BNO085)
+        payload = frame[2:-2]
+        data = parse_payload(payload)
+        assert data['imu_is_bno085'] is True
+        assert data['fix_quality'] == 1  # masked, flag bit stripped
+
+    def test_no_flag_means_bmi160(self):
+        frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            fix_quality=2)
+        payload = frame[2:-2]
+        data = parse_payload(payload)
+        assert data['imu_is_bno085'] is False
+        assert data['fix_quality'] == 2
+
+    def test_flag_without_fix(self):
+        """BNO085 present but no GPS fix yet"""
+        frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            fix_quality=FLAG_IMU_BNO085)
+        payload = frame[2:-2]
+        data = parse_payload(payload)
+        assert data['imu_is_bno085'] is True
+        assert data['fix_quality'] == 0

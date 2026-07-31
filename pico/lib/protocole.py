@@ -10,6 +10,15 @@ STX = 0x02
 ETX = 0x03
 PAYLOAD_LEN = 30
 
+# fix_quality byte layout:
+#   bits 0-3: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
+#   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (millideg),
+#             gyr_z carries heading_accuracy (0.1 deg units)
+# Replaces the old implicit detection (gyr_x==0 and gyr_y==0), which a
+# perfectly still BMI160 could trigger by accident.
+FIX_QUALITY_MASK = 0x0F
+FLAG_IMU_BNO085 = 0x80
+
 
 def calc_crc8(data: bytes) -> int:
     """
@@ -46,7 +55,8 @@ def build_frame(seq: int,
         vitesse: Speed in cm/s (uint16)
         cap: Heading in 0.01 deg (uint16, 0-35999)
         satellites: Number of satellites in use (0-255)
-        fix_quality: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
+        fix_quality: bits 0-3 = GPS fix quality (0=no fix, 1=GPS, 2=DGPS),
+                     bit 7 = FLAG_IMU_BNO085
 
     Returns:
         Complete frame of 34 bytes

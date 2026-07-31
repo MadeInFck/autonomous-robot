@@ -20,7 +20,7 @@ fi
 
 # 1. Enable UART3
 echo ""
-echo "[1/5] Configuration UART3..."
+echo "[1/6] Configuration UART3..."
 CONFIG_FILE="/boot/firmware/config.txt"
 if [ -f "$CONFIG_FILE" ]; then
     if ! grep -q "dtoverlay=uart3-pi5" "$CONFIG_FILE"; then
@@ -36,7 +36,7 @@ fi
 
 # 2. Install system dependencies
 echo ""
-echo "[2/5] Installation des dépendances système..."
+echo "[2/6] Installation des dépendances système..."
 sudo apt-get update
 sudo apt-get install -y \
     python3-venv \
@@ -46,7 +46,7 @@ sudo apt-get install -y \
 
 # 3. Create the virtual environment
 echo ""
-echo "[3/5] Création de l'environnement virtuel..."
+echo "[3/6] Création de l'environnement virtuel..."
 
 # Navigate to the pi5 directory
 PI5_DIR="$INSTALL_DIR/pi5"
@@ -67,16 +67,29 @@ fi
 
 # 4. Install Python dependencies
 echo ""
-echo "[4/5] Installation des dépendances Python..."
+echo "[4/6] Installation des dépendances Python..."
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
 # 5. Serial permissions
 echo ""
-echo "[5/5] Configuration des permissions..."
+echo "[5/6] Configuration des permissions..."
 sudo usermod -a -G dialout $USER
 sudo usermod -a -G gpio $USER
+
+# 6. Sudoers rule for the web UI shutdown/restart buttons.
+# Restricted to exactly these two commands — do NOT grant a broad NOPASSWD,
+# the web server would otherwise become a full root escalation.
+echo ""
+echo "[6/6] Regle sudoers (boutons Eteindre/Redemarrer de l'interface web)..."
+SUDOERS_FILE="/etc/sudoers.d/robot-power"
+sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
+# Robot Mecanum: web UI power buttons (pi5/telemetry/web_server.py)
+$USER ALL=(root) NOPASSWD: /usr/sbin/shutdown now, /usr/sbin/reboot ""
+EOF
+sudo chmod 0440 "$SUDOERS_FILE"
+sudo visudo -c -f "$SUDOERS_FILE" > /dev/null && echo "  Regle installee: $SUDOERS_FILE"
 
 echo ""
 echo "=================================="
