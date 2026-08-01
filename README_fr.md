@@ -143,9 +143,40 @@ Le script configure automatiquement :
   `reboot` uniquement, utilisée par les boutons d'extinction de l'interface
   web (ne jamais donner un NOPASSWD large à l'utilisateur du serveur)
 
+- Service systemd `robot.service` (généré depuis `scripts/robot.service`),
+  **activé au boot**
+
 L'authentification est exigée par défaut : le serveur refuse de démarrer si
 `config/secrets.yaml` est absent ou invalide (copier `config/secrets.yaml.example`),
 sauf si `--no-auth` est passé explicitement.
+
+### Démarrage automatique au boot
+
+Le service est installé et activé par `setup_pi5_env.sh`. Au boot, le robot
+démarre **moteurs à l'arrêt et patrouille non lancée** : seule l'interface web
+devient disponible, la patrouille reste à démarrer manuellement.
+
+```bash
+sudo systemctl start robot      # démarrer maintenant
+sudo systemctl stop robot       # arrêter (coupe les moteurs proprement)
+systemctl status robot          # état
+journalctl -u robot -f          # journal en direct
+sudo systemctl disable robot    # ne plus démarrer au boot
+```
+
+`systemctl stop/restart` envoie SIGTERM, que `main.py` intercepte pour appeler
+`RobotApp.shutdown()` (arrêt pilote, moteurs, lidar, UART, caméra) — le robot ne
+peut pas rester en mouvement pendant un redémarrage du service. En cas de crash,
+`Restart=on-failure` relance dans l'état sûr (IDLE, moteurs coupés) ; un
+`secrets.yaml` invalide fait échouer le démarrage 5 fois puis systemd abandonne
+au lieu de boucler.
+
+Pour déboguer, arrête le service et lance à la main :
+
+```bash
+sudo systemctl stop robot
+cd ~/AutonomRobot/pi5 && source venv/bin/activate && python main.py
+```
 
 ### Raspberry Pi Pico
 

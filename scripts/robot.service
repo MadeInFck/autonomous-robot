@@ -1,0 +1,44 @@
+[Unit]
+# Template: __USER__ and __INSTALL_DIR__ are substituted by setup_pi5_env.sh
+# when it installs this file to /etc/systemd/system/robot.service.
+Description=Robot Mecanum autonome (Pi5)
+Documentation=https://github.com/MadeInFck/autonomous-robot
+
+# The web server binds 0.0.0.0 and works without a network, but waiting means
+# the access point is up — so the URL logged at boot is the reachable one.
+Wants=network-online.target
+After=network-online.target
+
+# A crash restarts the robot into IDLE with the motors stopped, which is the
+# safe state. The start limit keeps a permanently broken config (main.py exits
+# 1 on a missing/invalid secrets.yaml) from looping forever: after 5 attempts
+# in 120 s systemd gives up and leaves the failure visible in the journal.
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__INSTALL_DIR__/pi5
+# Unbuffered: without it, journalctl shows the logs in delayed bursts.
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__INSTALL_DIR__/pi5/venv/bin/python main.py
+
+# main.py traps SIGTERM and runs RobotApp.shutdown(): motors stopped, pilot
+# stopped, UART/lidar/camera closed. Leave room to finish — stopping the pilot
+# alone joins its thread for up to 2 s — before systemd escalates to SIGKILL.
+# Killing the whole cgroup on stop also reaps the camera subprocess.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=5
+
+# Deliberately NOT sandboxed. NoNewPrivileges=true would break the web UI power
+# buttons (they rely on the restricted sudoers rule robot-power); PrivateDevices
+# would cut GPIO and the serial ports; ProtectSystem=strict would block writes to
+# ~/.config/robot/imu_cal_state.json and config/patrol_route.json. The service
+# runs as an unprivileged user whose only elevation is shutdown/reboot.
+
+[Install]
+WantedBy=multi-user.target

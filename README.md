@@ -142,9 +142,40 @@ The script automatically configures:
   `reboot` only, used by the web UI power buttons (never grant a broad
   NOPASSWD to the user running the server)
 
+- systemd service `robot.service` (generated from `scripts/robot.service`),
+  **enabled at boot**
+
 Authentication is required by default: the server refuses to start if
 `config/secrets.yaml` is missing or invalid (copy `config/secrets.yaml.example`),
 unless `--no-auth` is passed explicitly.
+
+### Starting at boot
+
+The service is installed and enabled by `setup_pi5_env.sh`. At boot the robot
+comes up with **motors idle and no patrol running**: only the web interface
+becomes available, the patrol still has to be started manually.
+
+```bash
+sudo systemctl start robot      # start now
+sudo systemctl stop robot       # stop (motors cut cleanly)
+systemctl status robot          # status
+journalctl -u robot -f          # live log
+sudo systemctl disable robot    # stop starting at boot
+```
+
+`systemctl stop/restart` sends SIGTERM, which `main.py` traps to run
+`RobotApp.shutdown()` (pilot, motors, lidar, UART and camera all stopped) — the
+robot cannot keep moving across a service restart. On a crash,
+`Restart=on-failure` brings it back in the safe state (IDLE, motors stopped);
+an invalid `secrets.yaml` fails 5 times and systemd then gives up instead of
+looping.
+
+To debug, stop the service and run it by hand:
+
+```bash
+sudo systemctl stop robot
+cd ~/AutonomRobot/pi5 && source venv/bin/activate && python main.py
+```
 
 ### Raspberry Pi Pico
 
