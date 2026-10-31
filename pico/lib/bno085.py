@@ -145,12 +145,13 @@ class BNO085:
 
     # ── Data acquisition ──────────────────────────────────────────
 
-    def update(self) -> bool:
-        """Drain pending SHTP packets and update yaw/pitch/roll.
+    def update(self, max_packets: int = 40) -> bool:
+        """Drain pending SHTP packets and keep the latest yaw/pitch/roll.
 
-        Reads up to 8 packets per call to avoid falling behind when the main
-        loop runs slower than rate_hz. Stops as soon as a Rotation Vector
-        report is parsed (latest value is always the most useful).
+        The sensor reports at rate_hz while the caller polls slower (50 Hz
+        reports, 10 Hz main loop): reading until the queue is empty keeps the
+        orientation fresh and stops reports from piling up on the chip.
+        max_packets only bounds the time spent here if the bus misbehaves.
 
         The BNO085 prepends a 5-byte Timestamp Rebase header (0xFB + 4 bytes)
         before each sensor report when running in timestamped mode. We skip
@@ -159,7 +160,8 @@ class BNO085:
         Returns:
             True if yaw/pitch/roll were updated this call.
         """
-        for _ in range(8):
+        updated = False
+        for _ in range(max_packets):
             channel, payload = self._read_packet()
             if channel is None:
                 break  # no more data queued
@@ -168,8 +170,8 @@ class BNO085:
             # Skip 5-byte Timestamp Rebase prefix (0xFB + 4-byte timestamp)
             offset = 5 if payload[0] == 0xFB and len(payload) > 5 else 0
             if payload[offset] == _REPORT_ROTATION_VECTOR and len(payload) - offset >= 14:
-                return self._parse_rotation_vector(payload[offset:])
-        return False
+                updated = self._parse_rotation_vector(payload[offset:])
+        return updated
 
     def _parse_rotation_vector(self, payload: bytes) -> bool:
         # Rotation Vector report layout (after 4-byte SHTP header already stripped):

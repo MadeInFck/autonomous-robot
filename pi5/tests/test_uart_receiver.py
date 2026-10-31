@@ -9,8 +9,15 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sensors'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'pico', 'lib'))
 
-from uart_receiver import FrameReader, parse_payload, calc_crc8, STX, ETX, PAYLOAD_LEN
-from protocole import build_frame
+import json
+
+from uart_receiver import (
+    FrameReader, parse_payload, calc_crc8, STX, ETX, PAYLOAD_LEN,
+    ImuCalibrationLatch, frame_to_sensor_data,
+)
+from protocole import (
+    build_frame, FLAG_IMU_BNO085, convert_angle_to_centideg, convert_accuracy_to_raw,
+)
 
 
 def make_valid_frame(**kwargs):
@@ -213,3 +220,100 @@ class TestSequenceCheck:
         r2 = reader.get_frame()
         assert r1['seq'] == 65535
         assert r2['seq'] == 0
+
+
+# ===== Resync after line noise =====
+
+class TestResync:
+    def test_bogus_length_does_not_swallow_next_frame(self):
+        """An STX in the noise followed by a large LEN used to eat 255 bytes."""
+        reader = FrameReader()
+        reader.feed(bytes([STX, 0xFF]) + make_valid_frame(seq=5))
+        result = reader.get_frame()
+        assert result is not None and result['seq'] == 5
+
+
+# ===== BNO085 frames =====
+
+def make_bno_frame(pitch=0.0, roll=0.0, accuracy=5.0, yaw=0.0, fix=1):
+    return make_valid_frame(
+        acc_x=convert_angle_to_centideg(pitch),
+        acc_y=convert_angle_to_centideg(roll),
+        acc_z=0, gyr_x=0, gyr_y=0,
+        gyr_z=convert_accuracy_to_raw(accuracy),
+        cap=int(yaw * 100),
+        fix_quality=fix | FLAG_IMU_BNO085,
+    )
+
+
+def decode(frame_bytes):
+    reader = FrameReader()
+    reader.feed(frame_bytes)
+    return reader.get_frame()
+
+
+@pytest.fixture
+def latch(tmp_path):
+    return ImuCalibrationLatch(path=str(tmp_path / 'cal.json'))
+
+
+class TestBno085Decoding:
+    @pytest.mark.parametrize('pitch, roll', [
+        (0.0, 0.0), (12.34, -5.5), (-45.0, 170.0), (89.9, -179.99),
+    ])
+    def test_orientation_full_range(self, pitch, roll, latch):
+        """Pitch/roll beyond +/-32.7 deg used to overflow the int16 field."""
+        data = frame_to_sensor_data(decode(make_bno_frame(pitch, roll)), latch)
+        assert data.imu_type == 'BNO085'
+        assert abs(data.pitch - pitch) < 0.011
+        assert abs(data.roll - roll) < 0.011
+
+    def test_orientation_clamped_not_wrapped(self):
+        assert convert_angle_to_centideg(400.0) == 18000
+        assert convert_angle_to_centideg(-400.0) == -18000
+
+    def test_accuracy_and_fields(self, latch):
+        data = frame_to_sensor_data(decode(make_bno_frame(accuracy=7.5, yaw=271.25)), latch)
+        assert abs(data.heading_accuracy_deg - 7.5) < 0.01
+        assert abs(data.heading - 271.25) < 0.01
+        assert data.imu_calibrated is True
+        # BMI160 fields carry nothing with a BNO085
+        assert data.acc_x == data.acc_y == data.gyr_z == 0.0
+
+    def test_accuracy_capped(self):
+        assert convert_accuracy_to_raw(500.0) == 1800
+
+    def test_bmi160_frame_keeps_raw_imu(self, latch):
+        frame = decode(make_valid_frame(acc_x=120, acc_z=981, gyr_z=-35))
+        data = frame_to_sensor_data(frame, latch)
+        assert data.imu_type == 'BMI160'
+        assert abs(data.acc_x - 0.12) < 1e-9
+        assert abs(data.gyr_z + 3.5) < 1e-9
+        assert data.imu_calibrated is False
+        assert data.pitch == data.roll == 0.0
+
+
+class TestImuCalibrationLatch:
+    def test_good_accuracy_calibrates_and_persists(self, latch, tmp_path):
+        assert latch.update(25.0) is False
+        assert latch.update(8.0) is True
+        assert json.loads((tmp_path / 'cal.json').read_text())['calibrated'] is True
+
+    def test_persisted_state_trusted_after_reboot(self, tmp_path):
+        path = str(tmp_path / 'cal.json')
+        ImuCalibrationLatch(path).update(5.0)
+        rebooted = ImuCalibrationLatch(path)
+        assert rebooted.update(20.0) is True    # still converging, DCD known
+
+    def test_strong_disturbance_forgets_calibration(self, tmp_path):
+        path = str(tmp_path / 'cal.json')
+        ImuCalibrationLatch(path).update(5.0)
+        rebooted = ImuCalibrationLatch(path)
+        rebooted.update(45.0)
+        assert rebooted.update(20.0) is False
+        assert json.loads((tmp_path / 'cal.json').read_text())['calibrated'] is False
+
+    def test_missing_or_corrupt_file_means_uncalibrated(self, tmp_path):
+        bad = tmp_path / 'cal.json'
+        bad.write_text('{not json')
+        assert ImuCalibrationLatch(str(bad)).update(20.0) is False

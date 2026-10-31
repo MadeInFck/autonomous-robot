@@ -256,3 +256,17 @@ class TestRoundTrip:
         data = parse_payload(payload)
         assert data['imu_is_bno085'] is True
         assert data['fix_quality'] == 0
+
+
+    def test_bno085_orientation_decoded(self):
+        """With the flag, parse_payload decodes the repurposed BMI160 fields"""
+        frame = build_frame(0, -4512, 17999, 0, 0, 0, 75, 0, 0, 0, 0, 0,
+                            fix_quality=1 | FLAG_IMU_BNO085)
+        data = parse_payload(frame[2:-2])
+        assert abs(data['pitch'] - (-45.12)) < 1e-9
+        assert abs(data['roll'] - 179.99) < 1e-9
+        assert abs(data['heading_accuracy_deg'] - 7.5) < 1e-9
+
+    def test_bmi160_has_no_orientation_keys(self):
+        frame = build_frame(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, fix_quality=1)
+        assert 'pitch' not in parse_payload(frame[2:-2])

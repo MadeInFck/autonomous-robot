@@ -20,17 +20,29 @@ class GPSReader:
 
     def update(self):
         """
-        Read and parse available GPS data
+        Feed every byte already received to the NMEA parser (non-blocking)
 
         Call regularly in the main loop
         """
-        while self.uart.any():
-            char = self.uart.read(1)
-            if char:
-                try:
-                    self.parser.update(chr(char[0]))
-                except (TypeError, ValueError):
-                    pass
+        pending = self.uart.any()
+        data = self.uart.read(pending) if pending else None
+        if not data:
+            return
+        for byte in data:
+            try:
+                self.parser.update(chr(byte))
+            except (TypeError, ValueError):
+                pass
+
+    def _decimal_degrees(self, coord):
+        """micropyGPS coordinate ([deg, (min,) hemisphere]) -> signed decimal degrees"""
+        if self.parser.coord_format == 'dd':
+            value = coord[0]
+        else:
+            value = coord[0] + coord[1] / 60.0
+        if coord[-1] in ('S', 'W'):
+            value = -value
+        return value
 
     def read(self):
         """
@@ -39,48 +51,17 @@ class GPSReader:
         Returns:
             dict: {lat, lon, alt, speed, course, satellites, valid}
         """
-        # Update the parser with available data
         self.update()
 
-        # Check if fix is valid
-        if self.parser.valid and self.parser.fix_stat > 0:
-            # Latitude in decimal degrees
-            lat = self.parser.latitude
-            if self.parser.coord_format == 'dd':
-                lat_dd = lat[0]
-            else:
-                lat_dd = lat[0] + lat[1] / 60.0
-            if len(lat) > 1 and lat[-1] == 'S':
-                lat_dd = -lat_dd
-
-            # Longitude in decimal degrees
-            lon = self.parser.longitude
-            if self.parser.coord_format == 'dd':
-                lon_dd = lon[0]
-            else:
-                lon_dd = lon[0] + lon[1] / 60.0
-            if len(lon) > 1 and lon[-1] == 'W':
-                lon_dd = -lon_dd
-
-            # Speed (km/h -> m/s)
-            speed_ms = self.parser.speed[2] / 3.6 if self.parser.speed else 0.0
-
-            # Altitude
-            altitude = self.parser.altitude if self.parser.altitude else 0.0
-
-            # Course/heading
-            course = self.parser.course if self.parser.course else 0.0
-
-            # Satellites
-            satellites = self.parser.satellites_in_use if self.parser.satellites_in_use else 0
-
+        if self.has_fix():
             return {
-                'lat': lat_dd,
-                'lon': lon_dd,
-                'alt': altitude,
-                'speed': speed_ms,
-                'course': course,
-                'satellites': satellites,
+                'lat': self._decimal_degrees(self.parser.latitude),
+                'lon': self._decimal_degrees(self.parser.longitude),
+                'alt': self.parser.altitude or 0.0,
+                # micropyGPS speed is [knots, mph, km/h]
+                'speed': self.parser.speed[2] / 3.6 if self.parser.speed else 0.0,
+                'course': self.parser.course or 0.0,
+                'satellites': self.parser.satellites_in_use or 0,
                 'valid': True
             }
 
@@ -91,7 +72,7 @@ class GPSReader:
             'alt': 0.0,
             'speed': 0.0,
             'course': 0.0,
-            'satellites': self.parser.satellites_in_view if self.parser.satellites_in_view else 0,
+            'satellites': self.parser.satellites_in_view or 0,
             'valid': False
         }
 
@@ -108,7 +89,7 @@ if __name__ == "__main__":
 
     print("=== Test GPS Reader ===")
 
-    uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+    uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5), rxbuf=1024)
     parser = MicropyGPS(local_offset=0, location_formatting='dd')
     gps = GPSReader(uart, parser)
 

@@ -3,9 +3,9 @@ Raspberry Pi Pico main application
 Autonomous Robot - Sensor reading and UART transmission to Pi5
 
 Hardware:
-- GPS NEO-6M on UART1 (TX=GP4, RX=GP5) @ 9600 baud
+- GPS NEO-6M on UART1 (TX=GP4, RX=GP5) @ 115200 baud
 - Pi5 communication on UART0 (TX=GP0, RX=GP1) @ 115200 baud
-- IMU on I2C1 (SDA=GP14, SCL=GP15) @ 400kHz
+- IMU on I2C1 (SDA=GP14, SCL=GP15) @ 100 kHz
   BNO085 at 0x4A (preferred — absolute heading via mag fusion)
   BMI160 at 0x68 (fallback — accel + gyro, GPS COG for heading)
 
@@ -29,6 +29,8 @@ from lib.protocole import (
     convert_alt_m_to_dm,
     convert_speed_ms_to_cms,
     convert_heading_to_raw,
+    convert_angle_to_centideg,
+    convert_accuracy_to_raw,
     FLAG_IMU_BNO085
 )
 from lib.bmi160_raw import BMI160Raw
@@ -85,8 +87,11 @@ def init_hardware():
 
     # GPS
     print(f"GPS: UART{GPS_UART_ID} @ {GPS_BAUDRATE} (GP{GPS_TX_PIN}/GP{GPS_RX_PIN})")
+    # 1 KB RX buffer: a NEO-6M burst (all NMEA sentences of one fix, ~500
+    # bytes) lands in ~45 ms at 115200 baud while the loop may sleep ~90 ms;
+    # the 256-byte default would drop the end of it
     uart_gps = UART(GPS_UART_ID, baudrate=GPS_BAUDRATE,
-                    tx=Pin(GPS_TX_PIN), rx=Pin(GPS_RX_PIN))
+                    tx=Pin(GPS_TX_PIN), rx=Pin(GPS_RX_PIN), rxbuf=1024)
     gps_parser = MicropyGPS(local_offset=0, location_formatting='dd')
     gps = GPSReader(uart_gps, gps_parser)
 
@@ -142,24 +147,19 @@ def main():
 
             # Read IMU and prepare frame values
             if imu_type == 'BNO085':
-                # Drain buffered fusion reports to get the latest yaw value.
-                # BNO085 runs at 50 Hz; the main loop runs at 10 Hz, so up to
-                # 5 reports may be waiting.
-                for _ in range(10):
-                    if not imu.update():
-                        break
-                # Encode pitch/roll in acc_x/acc_y (millidegrees, same 1000× scaling as mg)
-                # acc_z kept at 0 — Pi5 reads acc_x/1000 = pitch_deg, acc_y/1000 = roll_deg
-                acc_x_mg = int(imu.pitch * 1000) if imu.valid else 0
-                acc_y_mg = int(imu.roll  * 1000) if imu.valid else 0
+                # 50 Hz reports, 10 Hz loop: drain them all, keep the latest
+                imu.update()
+                imu_valid = imu.valid
+                # The BNO085 reuses the BMI160 fields (see lib/protocole.py,
+                # signalled to the Pi5 by FLAG_IMU_BNO085): pitch/roll in
+                # acc_x/acc_y (0.01 deg), heading accuracy in gyr_z (0.1 deg)
+                acc_x_mg = convert_angle_to_centideg(imu.pitch) if imu_valid else 0
+                acc_y_mg = convert_angle_to_centideg(imu.roll) if imu_valid else 0
                 acc_z_mg = 0
                 gyr_x_raw = gyr_y_raw = 0
-                # Encode heading_accuracy_deg in gyr_z (0.1° units, max 1800 for 180°)
-                # Pi5 detects BNO085 by checking gyr_x == 0 and gyr_y == 0
-                gyr_z_raw = int(min(imu.heading_accuracy_deg, 180.0) * 10) if imu.valid else 1800
+                gyr_z_raw = convert_accuracy_to_raw(imu.heading_accuracy_deg if imu_valid else 180.0)
                 # Use BNO085 yaw; fall back to GPS COG until valid
-                heading   = imu.yaw if imu.valid else gps_data['course']
-                imu_valid = imu.valid
+                heading   = imu.yaw if imu_valid else gps_data['course']
                 # Auto-save DCD once calibrated (fires once per session)
                 if not cal_saved and imu.is_calibrated():
                     imu.save_calibration()

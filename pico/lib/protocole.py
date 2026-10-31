@@ -1,6 +1,6 @@
 """
 UART protocol module for Pi Pico (MicroPython)
-Handles building BMI160 + GPS frames
+Handles building IMU (BMI160 or BNO085) + GPS frames
 Compatible with TestInterfaceUART
 """
 import struct
@@ -12,8 +12,9 @@ PAYLOAD_LEN = 30
 
 # fix_quality byte layout:
 #   bits 0-3: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
-#   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (millideg),
-#             gyr_z carries heading_accuracy (0.1 deg units)
+#   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (0.01 deg units,
+#             int16 covers the full +/-180 deg), gyr_z carries
+#             heading_accuracy (0.1 deg units)
 # Replaces the old implicit detection (gyr_x==0 and gyr_y==0), which a
 # perfectly still BMI160 could trigger by accident.
 FIX_QUALITY_MASK = 0x0F
@@ -110,3 +111,13 @@ def convert_speed_ms_to_cms(ms: float) -> int:
 def convert_heading_to_raw(deg: float) -> int:
     """Convert heading in degrees to raw unit (0.01 deg)"""
     return int(deg * 100) % 36000
+
+
+def convert_angle_to_centideg(deg: float) -> int:
+    """Convert a signed angle (pitch/roll, +/-180 deg) to 0.01 deg units (int16)"""
+    return max(-18000, min(18000, int(deg * 100)))
+
+
+def convert_accuracy_to_raw(deg: float) -> int:
+    """Convert BNO085 heading accuracy to 0.1 deg units, capped at 180 deg"""
+    return int(min(deg, 180.0) * 10)
