@@ -135,3 +135,38 @@ class TestAngleDiff:
     def test_robot_frame_left_is_negative(self):
         """A free sector at 345deg (robot frame) is a 15deg turn to the LEFT."""
         assert angle_diff(345, 0) == -15
+
+
+class TestWideObstacle:
+    def test_wall_across_the_path_is_not_steered_into(self, avoider):
+        """A 60 cm wall 60 cm ahead spans -27..+27deg. Placed by its centroid
+        alone it filled one sector, and the 'free' 345deg next to it — still
+        inside the wall — was chosen."""
+        xs = np.arange(-300, 301, 20, dtype=float)
+        pts = np.column_stack((xs, np.full(len(xs), 600.0)))
+        wall = make_obstacle(0, 600)
+        wall.points_xy = pts
+        result = avoider.evaluate(DetectionResult(obstacles=[wall]), desired_heading_robot=0)
+        assert result.status == "avoiding"
+        assert abs(angle_diff(result.suggested_heading, 0)) > 30
+
+    def test_side_wall_reaching_the_front_blocks_the_corridor(self, avoider):
+        """Centroid at ~50deg (outside the corridor) but points down to 10deg."""
+        angles = np.radians(np.arange(10, 91, 5))
+        pts = np.column_stack((500 * np.sin(angles), 500 * np.cos(angles)))
+        wall = make_obstacle(50, 500)
+        wall.points_xy = pts
+        result = avoider.evaluate(DetectionResult(obstacles=[wall]), desired_heading_robot=0)
+        assert not result.clear
+
+
+class TestToDict:
+    def test_left_turn_is_negative(self, avoider):
+        detection = DetectionResult(obstacles=[make_obstacle(15, 500), make_obstacle(45, 500)])
+        d = avoider.evaluate(detection, desired_heading_robot=0).to_dict()
+        assert d == {'status': 'avoiding', 'turn_deg': -15, 'min_mm': 500}
+
+    def test_clear_has_no_distance(self, avoider):
+        """inf is not valid JSON: the browser's JSON.parse would reject it."""
+        d = avoider.evaluate(DetectionResult(), desired_heading_robot=0).to_dict()
+        assert d == {'status': 'clear', 'turn_deg': 0, 'min_mm': None}

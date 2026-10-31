@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
+import numpy as np
+
 from lidar.detection.types import DetectionResult
 
 
@@ -19,6 +21,19 @@ class AvoidanceResult:
     suggested_heading: float      # Suggested heading in degrees (0-360)
     min_distance_mm: float        # Distance to the nearest obstacle in the corridor
     status: str                   # "clear", "avoiding", "blocked"
+
+    def to_dict(self) -> dict:
+        """JSON form for the web UI.
+
+        turn_deg: signed steering toward the suggested heading, relative to
+        the front (the pilot always asks for 0): negative = left. min_mm is
+        None while nothing is in the corridor (inf is not valid JSON).
+        """
+        return {
+            'status': self.status,
+            'turn_deg': round(angle_diff(self.suggested_heading, 0)),
+            'min_mm': round(self.min_distance_mm) if math.isfinite(self.min_distance_mm) else None,
+        }
 
 
 class ObstacleAvoider:
@@ -69,16 +84,15 @@ class ObstacleAvoider:
                 status="clear",
             )
 
-        # Build the occupied sector map
-        sector_min_dist = [float('inf')] * self.num_sectors
+        # Build the occupied sector map from every obstacle point. The
+        # centroid alone put a wall across the path in a single sector, and
+        # the "free" neighbour picked next was still inside the wall.
+        sector_min_dist = np.full(self.num_sectors, np.inf)
         for obstacle in detection.obstacles:
-            # Centroid angle in robot frame
-            cx, cy = obstacle.centroid
-            angle = math.degrees(math.atan2(cx, cy)) % 360
-            sector_idx = int(angle / self.sector_size) % self.num_sectors
-            dist = obstacle.nearest_distance_mm
-            if dist < sector_min_dist[sector_idx]:
-                sector_min_dist[sector_idx] = dist
+            pts = obstacle.points_xy
+            angles = np.degrees(np.arctan2(pts[:, 0], pts[:, 1])) % 360
+            sectors = (angles // self.sector_size).astype(int) % self.num_sectors
+            np.minimum.at(sector_min_dist, sectors, np.hypot(pts[:, 0], pts[:, 1]))
 
         # Check the frontal corridor around the desired heading
         min_front_dist = self._check_corridor(
@@ -115,7 +129,7 @@ class ObstacleAvoider:
         )
 
     def _check_corridor(
-        self, sector_min_dist: list[float], heading: float
+        self, sector_min_dist: np.ndarray, heading: float
     ) -> float:
         """Returns the minimum distance in the corridor around the heading."""
         min_dist = float('inf')
@@ -123,11 +137,11 @@ class ObstacleAvoider:
             sector_center = (i + 0.5) * self.sector_size
             if abs(angle_diff(sector_center, heading)) <= self.corridor_half_angle:
                 if sector_min_dist[i] < min_dist:
-                    min_dist = sector_min_dist[i]
+                    min_dist = float(sector_min_dist[i])
         return min_dist
 
     def _find_free_sector(
-        self, sector_min_dist: list[float], desired_heading: float
+        self, sector_min_dist: np.ndarray, desired_heading: float
     ) -> Optional[float]:
         """Finds the free sector closest to the desired heading."""
         best_heading = None
