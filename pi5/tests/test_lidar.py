@@ -59,6 +59,36 @@ class TestScanAssembly:
         assert point.distance_mm == 0.0 and not point.is_valid
 
 
+class TestStartStop:
+    """The dashboard switches the lidar off and on again."""
+
+    @pytest.fixture
+    def scanner(self, monkeypatch):
+        monkeypatch.setattr(LidarScanner, '_run_loop', lambda self, loop: loop.close())
+        # A fresh SDK object per connection, like the real constructor
+        monkeypatch.setattr('lidar.scanner.RPLidar', lambda *a: unittest.mock.MagicMock())
+        return LidarScanner('/dev/null')
+
+    def test_restart_after_stop(self, scanner):
+        scanner.start()
+        first = scanner._lidar
+        TestScanAssembly._feed(scanner, list(range(0, 360, 2)) + [1])
+        assert scanner.get_last_scan() is not None
+        scanner.stop()
+        assert not scanner.is_running
+        assert scanner.get_last_scan() is None        # no frozen scan shown as live
+        first.shutdown.assert_called_once()
+        scanner.start()
+        assert scanner.is_running and scanner._lidar is not first
+
+    def test_stop_and_start_are_idempotent(self, scanner):
+        scanner.stop()                                # never started: no-op
+        scanner.start()
+        lidar = scanner._lidar
+        scanner.start()                               # already running: same port
+        assert scanner._lidar is lidar
+
+
 class TestScanGeometry:
     def test_to_xy_robot_frame(self):
         """0deg = forward = +Y, 90deg = right = +X."""

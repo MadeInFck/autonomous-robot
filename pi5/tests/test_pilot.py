@@ -245,6 +245,36 @@ class TestLidarIntegration:
         assert pilot.detector.detect.call_count == 2
 
 
+class TestObstacleView:
+    def test_preview_while_idle(self, lidar_pilot):
+        """Bench check: avoidance computed with no patrol, motors untouched."""
+        pilot, motors, _ = lidar_pilot
+        pilot.detector.detect.return_value = DetectionResult(obstacles=[
+            make_obstacle(15, 500), make_obstacle(45, 500),
+        ])
+        detection, avoidance = pilot.obstacle_view()
+        assert len(detection.obstacles) == 2
+        assert avoidance.status == "avoiding"
+        assert pilot.get_status()["avoidance"]["turn_deg"] == -15
+        motors.move.assert_not_called()
+        motors.stop.assert_not_called()
+        assert pilot.state == PilotState.IDLE
+
+    def test_scan_shared_with_control_loop(self, lidar_pilot):
+        """UI and control loop on the same scan: detected once, same answer."""
+        pilot, _, _ = lidar_pilot
+        pilot._control_step()
+        _, avoidance = pilot.obstacle_view()
+        assert pilot.detector.detect.call_count == 1
+        assert avoidance.status == "clear"
+
+    def test_no_lidar(self, mock_components):
+        motors, sensors, _, pm = mock_components
+        pilot = AutonomousPilot(motors, sensors, None, pm)
+        assert pilot.obstacle_view() == (None, None)
+        assert "avoidance" not in pilot.get_status()
+
+
 class TestActivity:
     def test_active_only_while_running(self, mock_components):
         motors, sensors, lidar, pm = mock_components

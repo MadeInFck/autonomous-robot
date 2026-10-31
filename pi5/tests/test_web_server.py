@@ -464,6 +464,122 @@ class TestManualControlVsPilot:
         motors.move.assert_called_once()
 
 
+class TestLidarOverlay:
+    """/api/lidar carries what the radar draws: obstacles + avoidance decision."""
+
+    def _get(self, active=False):
+        import numpy as np
+        from lidar.data import Scan, ScanPoint
+        from lidar.detection.obstacles import ObstacleDetector
+        from navigation.obstacle_avoider import ObstacleAvoider
+
+        # A wall 0.6 m ahead: the corridor is blocked, the sides are free
+        xs = np.arange(-300, 301, 20, dtype=float)
+        scan = Scan(points=[ScanPoint(float(np.degrees(np.arctan2(x, 600)) % 360),
+                                      float(np.hypot(x, 600)), 40) for x in xs],
+                    timestamp=time.time())
+        detection = ObstacleDetector().detect(scan)
+        avoider = ObstacleAvoider(obstacle_distance_mm=800)
+
+        lidar = MagicMock()
+        lidar.get_last_scan.return_value = scan
+        pilot = MagicMock()
+        pilot.is_active.return_value = active
+        pilot.avoider = avoider
+        pilot.obstacle_view.return_value = (detection, avoider.evaluate(detection, 0))
+        server = WebServer(lidar_scanner=lidar, pilot=pilot)
+        return server.app.test_client().get('/api/lidar').get_json()
+
+    def test_wall_and_avoidance(self):
+        data = self._get()
+        view = data['view']
+        assert view['preview'] is True
+        assert view['corridor'] == {'half_angle': 30, 'distance_mm': 800}
+        [wall] = view['obstacles']
+        assert wall['type'] == 'wall' and len(wall['seg']) == 4
+        assert view['avoidance']['status'] == 'avoiding'
+        assert abs(view['avoidance']['turn_deg']) > 30   # out of the wall, not into it
+        assert data['nearest_mm'] == 600
+
+    def test_far_obstacles_not_drawn(self):
+        """Beyond the avoidance distance an obstacle changes nothing."""
+        from lidar.data import Scan
+        from lidar.detection.types import DetectionResult
+        from navigation.obstacle_avoider import ObstacleAvoider
+        from tests.test_obstacle_avoider import make_obstacle
+
+        avoider = ObstacleAvoider(obstacle_distance_mm=800)
+        detection = DetectionResult(obstacles=[make_obstacle(90, 500), make_obstacle(90, 1200)])
+        pilot = MagicMock()
+        pilot.is_active.return_value = False
+        pilot.avoider = avoider
+        pilot.obstacle_view.return_value = (detection, avoider.evaluate(detection, 0))
+        lidar = MagicMock()
+        lidar.get_last_scan.return_value = Scan(timestamp=time.time())
+        view = WebServer(lidar_scanner=lidar, pilot=pilot).app.test_client().get('/api/lidar').get_json()['view']
+        [near] = view['obstacles']
+        assert near['x'] == 500
+
+    def test_not_preview_while_patrolling(self):
+        assert self._get(active=True)['view']['preview'] is False
+
+    def test_no_pilot_no_overlay(self):
+        lidar = MagicMock()
+        lidar.get_last_scan.return_value = None
+        data = WebServer(lidar_scanner=lidar).app.test_client().get('/api/lidar').get_json()
+        assert data['points'] == [] and data['nearest_mm'] is None
+
+
+class TestLidarSwitch:
+    def _client(self, running=True, patrolling=False):
+        lidar = MagicMock()
+        lidar.is_running = running
+        lidar.start.side_effect = lambda: setattr(lidar, 'is_running', True)
+        lidar.stop.side_effect = lambda: setattr(lidar, 'is_running', False)
+        lidar.get_last_scan.return_value = None
+        pilot = MagicMock()
+        pilot.is_active.return_value = patrolling
+        server = WebServer(lidar_scanner=lidar, pilot=pilot)
+        return server.app.test_client(), lidar, pilot
+
+    def test_switch_off_and_on(self):
+        client, lidar, _ = self._client()
+        r = client.post('/api/lidar/enable', json={'enabled': False}, headers=CSRF)
+        assert r.status_code == 200 and r.get_json()['running'] is False
+        assert client.get('/api/status').get_json()['lidar_running'] is False
+        r = client.post('/api/lidar/enable', json={'enabled': True}, headers=CSRF)
+        assert r.get_json()['running'] is True
+
+    def test_cannot_blind_a_running_patrol(self):
+        client, lidar, _ = self._client(patrolling=True)
+        r = client.post('/api/lidar/enable', json={'enabled': False}, headers=CSRF)
+        assert r.status_code == 409
+        lidar.stop.assert_not_called()
+
+    def test_no_patrol_with_lidar_off(self):
+        client, _, pilot = self._client(running=False)
+        r = client.post('/api/patrol/start', headers=CSRF)
+        assert r.status_code == 409 and 'LiDAR' in r.get_json()['message']
+        pilot.start.assert_not_called()
+
+    def test_patrol_starts_with_lidar_on(self):
+        client, _, pilot = self._client()
+        assert client.post('/api/patrol/start', headers=CSRF).status_code == 200
+        pilot.start.assert_called_once()
+
+    def test_bad_payload(self):
+        client, lidar, _ = self._client()
+        r = client.post('/api/lidar/enable', json={'enabled': 'no'}, headers=CSRF)
+        assert r.status_code == 400
+        lidar.stop.assert_not_called()
+
+    def test_start_failure_reported(self):
+        client, lidar, _ = self._client(running=False)
+        lidar.start.side_effect = OSError('port occupe')
+        r = client.post('/api/lidar/enable', json={'enabled': True}, headers=CSRF)
+        assert r.status_code == 500 and 'port occupe' in r.get_json()['message']
+
+
 class TestLoadWebConfig:
     """main.load_web_config must be fail-closed: any problem raises."""
 

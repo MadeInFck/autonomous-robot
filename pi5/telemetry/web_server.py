@@ -59,6 +59,22 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _obstacle_to_dict(obstacle) -> dict:
+    """What the radar overlay draws, in robot-frame mm (x right, y forward).
+
+    A wall is its fitted segment, anything else a circle around the centroid.
+    """
+    cx, cy = obstacle.centroid
+    shape = {'type': obstacle.type.value, 'x': round(float(cx)), 'y': round(float(cy))}
+    seg = obstacle.line_segment
+    if seg is not None:
+        shape['seg'] = [round(float(v)) for v in (*seg.start, *seg.end)]
+    else:
+        box = obstacle.bbox
+        shape['r'] = round(max(box.x_max - box.x_min, box.y_max - box.y_min) / 2)
+    return shape
+
+
 def get_local_ip():
     """Detects the local IP address"""
     try:
@@ -294,6 +310,7 @@ class WebServer:
                 'motors_connected': self.motor_controller is not None,
                 'sensors_connected': self.sensor_receiver is not None,
                 'lidar_connected': self.lidar_scanner is not None,
+                'lidar_running': bool(self.lidar_scanner and self.lidar_scanner.is_running),
                 'patrol_available': self.patrol_manager is not None,
                 'camera_connected': self.camera is not None and not self.camera.has_error(),
                 'uart_ok': uart_ok,
@@ -368,17 +385,56 @@ class WebServer:
                 for p in scan.valid_points
             ]
 
-            nearest_mm = None
+            # Obstacles and avoidance decision for the overlay. Between patrols
+            # the pilot computes them for display only (bench check).
+            nearest_mm, view = None, None
             if self.pilot:
-                det = self.pilot.get_last_detection()
-                if det and det.nearest_obstacle:
-                    nearest_mm = round(det.nearest_obstacle.nearest_distance_mm)
+                detection, avoidance = self.pilot.obstacle_view()
+                if detection is not None:
+                    if detection.nearest_obstacle:
+                        nearest_mm = round(detection.nearest_obstacle.nearest_distance_mm)
+                    avoider = self.pilot.avoider
+                    reach = avoider.obstacle_distance_mm
+                    view = {
+                        'preview': not self._pilot_active(),
+                        'corridor': {'half_angle': avoider.corridor_half_angle,
+                                     'distance_mm': reach},
+                        # Only what weighs on the decision: beyond `reach` an
+                        # obstacle leaves its sector free (the raw points
+                        # still show it).
+                        'obstacles': [_obstacle_to_dict(o) for o in detection.obstacles
+                                      if o.nearest_distance_mm <= reach],
+                        'avoidance': avoidance.to_dict(),
+                    }
 
             return jsonify({
                 'points': points,
                 'num_points': len(points),
                 'nearest_mm': nearest_mm,
+                'view': view,
             })
+
+        @self.app.route('/api/lidar/enable', methods=['POST'])
+        def api_lidar_enable():
+            if not self.lidar_scanner:
+                return jsonify({'status': 'error', 'message': 'LiDAR absent'}), 400
+            enabled = (request.get_json(silent=True) or {}).get('enabled')
+            if not isinstance(enabled, bool):
+                return jsonify({'status': 'error', 'message': 'enabled: true/false attendu'}), 400
+            # Never blind a running patrol (its failsafe would stop it anyway)
+            if not enabled and self._pilot_active():
+                return jsonify({'status': 'error',
+                                'message': 'Patrouille en cours : arrêtez-la avant de couper le LiDAR'}), 409
+            try:
+                if enabled:
+                    self.lidar_scanner.start()
+                else:
+                    self.lidar_scanner.stop()
+            except Exception as e:
+                logger.error(f"LiDAR: echec {'demarrage' if enabled else 'arret'}: {e}")
+                return jsonify({'status': 'error', 'message': f'LiDAR: {e}'}), 500
+            logger.info(f"LiDAR {'active' if enabled else 'coupe'} depuis l'interface")
+            return jsonify({'status': 'ok', 'running': self.lidar_scanner.is_running})
 
         # --- Waypoint routes ---
 
@@ -459,6 +515,11 @@ class WebServer:
         def api_patrol_start():
             if not self.pilot:
                 return jsonify({'status': 'error', 'message': 'Pilote non disponible'}), 400
+            # A lidar switched off from the UI: no patrol without avoidance
+            # (with no lidar at all the robot patrols without, as before)
+            if self.lidar_scanner and not self.lidar_scanner.is_running:
+                return jsonify({'status': 'error',
+                                'message': 'LiDAR coupé : réactivez-le avant de lancer la patrouille'}), 409
             self.pilot.start()
             return jsonify({'status': 'ok'})
 

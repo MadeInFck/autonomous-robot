@@ -117,11 +117,13 @@ class AutonomousPilot:
         # waypoints if their spacing is below waypoint_radius
         self._waypoint_cooldown_until: float = 0.0
 
-        # Last scan run through the detector, and its result (also read by
+        # Last scan run through the detector, and its results (also read by
         # the web API). A scan is only processed once: the tracker would
         # otherwise count the same frame as several confirmations.
+        self._scan_lock = threading.Lock()
         self._last_scan = None
         self._last_detection = None
+        self._last_avoidance = None
 
         # Liveness heartbeat, refreshed at every control cycle. The web
         # watchdog reads it to detect a dead control thread — in that state it
@@ -187,11 +189,37 @@ class AutonomousPilot:
         status["dbg_omega"] = round(self._dbg_omega, 2)
         status["dbg_speed"] = round(self._dbg_speed, 2)
 
+        avoidance = self._last_avoidance
+        if avoidance is not None:
+            status["avoidance"] = avoidance.to_dict()
+
         return status
 
-    def get_last_detection(self):
-        """Returns the last DetectionResult (for the web API)."""
-        return self._last_detection
+    def _process_scan(self, scan):
+        """(detection, avoidance) for `scan`, computed once per scan.
+
+        Called by the control loop and by obstacle_view() for the web UI:
+        whichever sees a new scan first does the work, the other gets the
+        cached result.
+        """
+        with self._scan_lock:
+            if scan is not self._last_scan:
+                self._last_scan = scan
+                self._last_detection = self.tracker.update(self.detector.detect(scan))
+                self._last_avoidance = self.avoider.evaluate(self._last_detection, 0)
+            return self._last_detection, self._last_avoidance
+
+    def obstacle_view(self):
+        """(detection, avoidance) on the latest scan, for the web UI.
+
+        Also runs between patrols, so the avoidance can be checked on the
+        bench: display only, nothing here touches the motors.
+        (None, None) without a lidar or before its first scan.
+        """
+        scan = self.lidar.get_last_scan() if self.lidar else None
+        if scan is None:
+            return None, None
+        return self._process_scan(scan)
 
     def control_heartbeat_age(self) -> float:
         """Seconds since the control loop last completed a cycle.
@@ -305,10 +333,7 @@ class AutonomousPilot:
             if self._lidar_stale:
                 self._halt()
                 return
-            if scan is not self._last_scan:
-                self._last_scan = scan
-                self._last_detection = self.tracker.update(self.detector.detect(scan))
-            avoidance = self.avoider.evaluate(self._last_detection, 0)
+            _, avoidance = self._process_scan(scan)
 
         # 3. Check if waypoint reached — raw GPS avoids averaging lag
         #    (skip during cooldown to prevent cascading through close waypoints)

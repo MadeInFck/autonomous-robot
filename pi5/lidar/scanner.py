@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from threading import Thread
+from threading import Lock, Thread
 from typing import Optional
 
 from rplidarc1 import RPLidar
@@ -31,6 +31,7 @@ class LidarScanner:
         self._lidar: Optional[RPLidar] = None
         self._thread: Optional[Thread] = None
         self._running = False
+        self._state_lock = Lock()  # start/stop can come from the web UI
 
         # Revolution being assembled — touched by the asyncio thread only
         self._current_points: list[ScanPoint] = []
@@ -40,33 +41,46 @@ class LidarScanner:
         # in other threads need no lock.
         self._last_scan: Optional[Scan] = None
 
-    def start(self):
-        """Starts the connection and scanning."""
-        logger.info(f"Connexion au LiDAR sur {self.port} @ {self.baudrate}")
-        self._lidar = RPLidar(self.port, self.baudrate)
-        self._running = True
+    @property
+    def is_running(self) -> bool:
+        return self._running
 
-        loop = asyncio.new_event_loop()
-        self._thread = Thread(target=self._run_loop, args=(loop,), daemon=True)
-        self._thread.start()
-        logger.info("Thread asyncio demarre, scan en cours.")
+    def start(self):
+        """Starts the connection and scanning (again after a stop() too)."""
+        with self._state_lock:
+            if self._running:
+                return
+            logger.info(f"Connexion au LiDAR sur {self.port} @ {self.baudrate}")
+            self._current_points = []
+            self._last_angle = -1.0
+            self._last_scan = None
+            self._lidar = RPLidar(self.port, self.baudrate)
+            self._running = True
+
+            loop = asyncio.new_event_loop()
+            self._thread = Thread(target=self._run_loop, args=(loop,), daemon=True)
+            self._thread.start()
+            logger.info("Thread asyncio demarre, scan en cours.")
 
     def stop(self):
         """Cleanly stops scanning and the connection."""
-        if not self._running:
-            return
-        self._running = False
-        if self._lidar:
-            self._lidar.stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=3)
-        if self._lidar:
-            try:
-                self._lidar.reset()
-                self._lidar.shutdown()
-            except Exception as e:
-                logger.warning(f"Erreur lors de l'arret du LiDAR: {e}")
-        logger.info("LiDAR arrete.")
+        with self._state_lock:
+            if not self._running:
+                return
+            self._running = False
+            if self._lidar:
+                self._lidar.stop_event.set()
+            if self._thread:
+                self._thread.join(timeout=3)
+            if self._lidar:
+                try:
+                    self._lidar.reset()
+                    self._lidar.shutdown()
+                except Exception as e:
+                    logger.warning(f"Erreur lors de l'arret du LiDAR: {e}")
+            # A frozen scan must not look live to the radar or the pilot
+            self._last_scan = None
+            logger.info("LiDAR arrete.")
 
     def get_last_scan(self) -> Optional[Scan]:
         """Returns the last complete scan (non-blocking, thread-safe)."""

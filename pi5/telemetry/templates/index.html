@@ -52,6 +52,8 @@
 
         /* --- Lidar + Patrol section --- */
         .section-title { font-size: 0.85em; padding: 6px 15px 2px; opacity: 0.7; }
+        .section-title.with-btn { display: flex; align-items: center; opacity: 1; }
+        .section-title.with-btn > span { opacity: 0.7; }
 
         .lidar-section { display: flex; flex-direction: column; align-items: center; padding: 6px; background: rgba(0,0,0,0.1); }
         .lidar-canvas-wrap { position: relative; }
@@ -237,7 +239,10 @@
     </div>
 
     <!-- Lidar section -->
-    <div class="section-title">LiDAR 360</div>
+    <div class="section-title with-btn">
+        <span>LiDAR 360</span>
+        <button class="cam-toggle-btn" id="lidarToggleBtn" hidden>&#9208; Couper</button>
+    </div>
     <div class="lidar-section">
         <div class="lidar-canvas-wrap">
             <canvas id="lidarCanvas" width="200" height="200"></canvas>
@@ -410,6 +415,8 @@
 
         /* ===== Status polling (UART link, lidar presence) ===== */
         let _lidarConnected = true;  // until /api/status says otherwise
+        let _lidarRunning = true;
+        let _lidarToggleInFlight = false;
         poll('/api/status', 2000, (d) => {
             const ok = d.uart_ok === true;
             $('uartDot').classList.toggle('connected', ok);
@@ -419,6 +426,44 @@
                 $('lidarInfo').textContent = 'LiDAR absent';
             }
             _lidarConnected = d.lidar_connected === true;
+            if (!_lidarToggleInFlight) setLidarRunning(d.lidar_running === true);
+        });
+
+        /* ===== LiDAR on/off ===== */
+        function setLidarRunning(running) {
+            if (_lidarConnected && _lidarRunning && !running) {
+                drawLidar([]);
+                $('lidarInfo').textContent = 'LiDAR coupé';
+            }
+            _lidarRunning = running;
+            const btn = $('lidarToggleBtn');
+            btn.hidden = !_lidarConnected;
+            btn.textContent = running ? '⏸ Couper' : '▶ Activer';
+            btn.classList.toggle('paused', !running);
+        }
+        $('lidarToggleBtn').addEventListener('click', async () => {
+            if (_lidarToggleInFlight) return;
+            _lidarToggleInFlight = true;
+            const btn = $('lidarToggleBtn');
+            btn.disabled = true;
+            btn.textContent = '…';
+            let running = _lidarRunning;
+            try {
+                const res = await apiFetch('/api/lidar/enable', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: !_lidarRunning}),
+                });
+                const data = await res.json();
+                if (res.ok) running = data.running;
+                else showToast(data.message || 'Erreur LiDAR');
+            } catch (e) {
+                showToast('Erreur LiDAR');
+            } finally {
+                _lidarToggleInFlight = false;
+                btn.disabled = false;
+                setLidarRunning(running);
+            }
         });
         function headingToCardinal(deg) {
             const dirs = ['N','NE','E','SE','S','SO','O','NO'];
@@ -489,55 +534,146 @@
         const ctx = lidarCanvas.getContext('2d');
         const CW = lidarCanvas.width, CH = lidarCanvas.height;
         const CENTER_X = CW/2, CENTER_Y = CH/2;
-        const MAX_RANGE = 6000; // mm
-        const SCALE = (CW/2 - 10) / MAX_RANGE;
+        const RANGES = [6000, 3000, 1500]; // mm — tap the radar to zoom
+        let rangeIdx = 0;
+        let lastLidar = {};
 
-        function drawLidar(points) {
+        const AVOID_COLORS = {   // corridor fill by avoidance status
+            clear:    'rgba(80,255,120,0.10)',
+            avoiding: 'rgba(255,150,40,0.30)',
+            blocked:  'rgba(255,60,60,0.40)',
+        };
+        const DEG = Math.PI / 180;
+
+        // Robot frame (mm, x right, y forward) -> canvas pixels
+        const toCanvas = (x, y, scale) => [CENTER_X + x * scale, CENTER_Y - y * scale];
+
+        function turnText(deg) {
+            if (!deg) return 'tout droit';
+            return `${Math.abs(deg)}° à ${deg > 0 ? 'droite' : 'gauche'}`;
+        }
+
+        function drawLidar(points, view) {
+            const range = RANGES[rangeIdx];
+            const radius = CW/2 - 10;
+            const scale = radius / range;
             ctx.clearRect(0, 0, CW, CH);
             ctx.fillStyle = '#0a0a1a';
             ctx.fillRect(0, 0, CW, CH);
 
-            // Reference circles
+            // Reference circles: 6 rings whatever the zoom
             ctx.strokeStyle = 'rgba(255,255,255,0.08)';
             ctx.lineWidth = 0.5;
-            [1000, 2000, 3000, 4000, 5000, 6000].forEach(r => {
+            for (let i = 1; i <= 6; i++) {
                 ctx.beginPath();
-                ctx.arc(CENTER_X, CENTER_Y, r * SCALE, 0, Math.PI*2);
+                ctx.arc(CENTER_X, CENTER_Y, i * radius / 6, 0, Math.PI*2);
                 ctx.stroke();
-            });
+            }
 
             // Cross
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             ctx.beginPath(); ctx.moveTo(CENTER_X, 0); ctx.lineTo(CENTER_X, CH); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(0, CENTER_Y); ctx.lineTo(CW, CENTER_Y); ctx.stroke();
 
+            // Frontal corridor watched by the avoider (robot angle 0 = up,
+            // clockwise; canvas angles start at +x, hence the -90deg)
+            const avoid = view && view.avoidance;
+            if (view) {
+                const c = view.corridor;
+                // Avoidance reach all around: inside it an obstacle closes its
+                // sector as an escape direction too
+                ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.arc(CENTER_X, CENTER_Y, Math.min(c.distance_mm * scale, radius), 0, Math.PI*2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = AVOID_COLORS[avoid.status] || AVOID_COLORS.clear;
+                ctx.beginPath();
+                ctx.moveTo(CENTER_X, CENTER_Y);
+                ctx.arc(CENTER_X, CENTER_Y, Math.min(c.distance_mm * scale, radius),
+                        (-c.half_angle - 90) * DEG, (c.half_angle - 90) * DEG);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Points
+            for (const p of points || []) {
+                const d = p[1];
+                if (d <= 0 || d > range) continue;
+                const [x, y] = toCanvas(d * Math.sin(p[0] * DEG), d * Math.cos(p[0] * DEG), scale);
+                // Color by distance
+                const t = d / range;
+                ctx.fillStyle = `rgb(${Math.round(255 * t)},${Math.round(255 * (1-t))},80)`;
+                ctx.fillRect(x-1, y-1, 2, 2);
+            }
+
+            // Obstacles within reach (the server drops the others): walls as
+            // their segment, the rest as circles
+            ctx.lineWidth = 2;
+            for (const o of (view && view.obstacles) || []) {
+                ctx.beginPath();
+                if (o.seg) {
+                    ctx.strokeStyle = '#4cf';
+                    ctx.moveTo(...toCanvas(o.seg[0], o.seg[1], scale));
+                    ctx.lineTo(...toCanvas(o.seg[2], o.seg[3], scale));
+                } else {
+                    ctx.strokeStyle = '#fd4';
+                    ctx.arc(...toCanvas(o.x, o.y, scale), Math.max(o.r * scale, 4), 0, Math.PI*2);
+                }
+                ctx.stroke();
+            }
+
+            // Avoidance decision: arrow toward the free sector, or BLOQUÉ
+            if (avoid && avoid.status === 'avoiding') {
+                const a = avoid.turn_deg * DEG, len = radius * 0.7;
+                const tipX = CENTER_X + len * Math.sin(a), tipY = CENTER_Y - len * Math.cos(a);
+                ctx.strokeStyle = ctx.fillStyle = '#4f4';
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(CENTER_X, CENTER_Y); ctx.lineTo(tipX, tipY); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(tipX, tipY);
+                ctx.lineTo(tipX - 10 * Math.sin(a - 0.4), tipY + 10 * Math.cos(a - 0.4));
+                ctx.lineTo(tipX - 10 * Math.sin(a + 0.4), tipY + 10 * Math.cos(a + 0.4));
+                ctx.closePath();
+                ctx.fill();
+            } else if (avoid && avoid.status === 'blocked') {
+                ctx.fillStyle = '#f55';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('BLOQUÉ', CENTER_X, 18);
+            }
+
             // Robot marker
             ctx.fillStyle = '#4f4';
             ctx.beginPath(); ctx.arc(CENTER_X, CENTER_Y, 3, 0, Math.PI*2); ctx.fill();
-
-            // Points
-            if (!points || points.length === 0) return;
-            for (const p of points) {
-                const a_rad = p[0] * Math.PI / 180;
-                const d = p[1];
-                if (d <= 0) continue;
-                const x = CENTER_X + d * Math.sin(a_rad) * SCALE;
-                const y = CENTER_Y - d * Math.cos(a_rad) * SCALE;
-                // Color by distance
-                const t = Math.min(d / MAX_RANGE, 1);
-                const r = Math.round(255 * t);
-                const g = Math.round(255 * (1-t));
-                ctx.fillStyle = `rgb(${r},${g},80)`;
-                ctx.fillRect(x-1, y-1, 2, 2);
-            }
         }
 
+        function showLidar(data) {
+            lastLidar = data;
+            drawLidar(data.points, data.view);
+            const parts = [
+                `${data.num_points || 0} pts`,
+                `proche: ${data.nearest_mm ? (data.nearest_mm/1000).toFixed(2)+' m' : '--'}`,
+            ];
+            const avoid = data.view && data.view.avoidance;
+            if (avoid) {
+                parts.push({clear: 'voie libre', blocked: 'BLOQUÉ'}[avoid.status]
+                           || '→ ' + turnText(avoid.turn_deg));
+            }
+            parts.push(`${RANGES[rangeIdx]/1000} m`);
+            $('lidarInfo').textContent = parts.join(' | ');
+        }
+
+        lidarCanvas.addEventListener('click', () => {
+            rangeIdx = (rangeIdx + 1) % RANGES.length;
+            showLidar(lastLidar);
+        });
+
         // 5 Hz, only while a lidar is present
-        poll('/api/lidar', 200, (data) => {
-            drawLidar(data.points || []);
-            $('lidarInfo').textContent =
-                `${data.num_points || 0} pts | nearest: ${data.nearest_mm ? (data.nearest_mm/1000).toFixed(1)+'m' : '--'}`;
-        }, {onError: () => drawLidar([]), when: () => _lidarConnected});
+        poll('/api/lidar', 200, showLidar,
+             {onError: () => drawLidar([]), when: () => _lidarConnected && _lidarRunning});
 
         drawLidar([]); // Initial empty
 
@@ -775,7 +911,10 @@
             } catch(e) {}
         }
         async function startPatrol() {
-            try { await apiFetch('/api/patrol/start', {method: 'POST'}); } catch(e) {}
+            try {
+                const res = await apiFetch('/api/patrol/start', {method: 'POST'});
+                if (!res.ok) showToast((await res.json()).message || 'Patrouille refusée');
+            } catch(e) {}
         }
         async function stopPatrol() {
             try { await apiFetch('/api/patrol/stop', {method: 'POST'}); } catch(e) {}
@@ -824,7 +963,10 @@
             PATROL_COMPLETE: ['TERMINE', 'manual'],
         };
         poll('/api/patrol/status', 1000, (s) => {
-            const [label, cls] = PATROL_BADGES[s.state] || [s.state, 'manual'];
+            const avoid = s.avoidance || {};
+            const blocked = s.state === 'AVOIDING' && avoid.status === 'blocked';
+            const [label, cls] = blocked ? ['BLOQUÉ', 'blocked']
+                                         : PATROL_BADGES[s.state] || [s.state, 'manual'];
             $('modeBadge').textContent = label;
             $('modeBadge').className = 'mode-badge ' + cls;
 
@@ -838,7 +980,10 @@
                     text += `\nhdg ${s.dbg_avg_heading}\u00b0 \u2192 cap ${s.dbg_bearing}\u00b0 err ${s.dbg_heading_error}\u00b0 \u03c9${s.dbg_omega} v${s.dbg_speed}m/s`;
                 }
             } else if (s.state === 'AVOIDING') {
-                text = `Évitement obstacle - ${wp}`;
+                const dist = avoid.min_mm != null ? ` | obstacle ${(avoid.min_mm/1000).toFixed(2)} m` : '';
+                text = blocked
+                    ? `⛔ Bloqué, arrêt${dist} | ${wp}`
+                    : `Évitement → ${turnText(avoid.turn_deg)}${dist} | ${wp}\nω${s.dbg_omega} v${s.dbg_speed}m/s`;
             } else if (s.state === 'PATROL_COMPLETE') {
                 text = 'Patrouille terminée';
             } else {
