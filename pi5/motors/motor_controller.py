@@ -110,8 +110,11 @@ class MecanumController:
             self._pwm_thread.start()
 
         except Exception as e:
-            logger.error(f"Erreur init GPIO: {e}")
+            # Lines held by another process (a second robot instance) or a
+            # wrong chip: fail loudly. Falling back to simulation here made
+            # the app report the motors as working while nothing could move.
             self.request = None
+            raise RuntimeError(f"GPIO moteurs indisponibles: {e}") from e
 
     def _write_pin(self, pin: int, value):
         """Writes a GPIO only when its state changes (one syscall per real edge)."""

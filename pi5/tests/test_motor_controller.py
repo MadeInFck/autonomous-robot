@@ -303,3 +303,13 @@ class TestSoftwarePWM:
         for motor in MOTORS:
             pins = ctrl.config[motor]
             assert last[pins.ia] is INACTIVE and last[pins.ib] is INACTIVE
+
+
+class TestGpioFailure:
+    def test_busy_lines_raise(self, monkeypatch):
+        """GPIO held by another process must not silently become simulation."""
+        def busy(*args, **kwargs):
+            raise OSError(16, 'Device or resource busy')
+        monkeypatch.setattr(motor_controller.gpiod, 'request_lines', busy)
+        with pytest.raises(RuntimeError, match='busy'):
+            MecanumController()
