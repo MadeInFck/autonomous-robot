@@ -17,28 +17,38 @@ logger = logging.getLogger('robot')
 
 # Relative path for local imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sensors.uart_receiver import UARTReceiver, SensorData
-from motors.motor_controller import MecanumController, MotorPins
+from sensors.uart_receiver import UARTReceiver
+from motors.motor_controller import MecanumController, MotorPins, MOTORS
 from telemetry.web_server import WebServer
 from navigation.patrol_manager import PatrolManager
 
-# Default configuration — overridden by config/robot_config.yaml when present,
-# and (for lidar port / web port) by CLI flags on top of that.
+# Hardware defaults — overridden by config/robot_config.yaml when present,
+# and (for lidar port / web port) by CLI flags on top of that. Tuning values
+# (speeds, PID gains, radii...) default in the classes that use them.
 UART_PORT = '/dev/ttyAMA3'
 UART_BAUDRATE = 115200
 LIDAR_PORT = '/dev/ttyUSB0'
 LIDAR_BAUDRATE = 460800
 LIDAR_MIN_QUALITY = 10
 WEB_PORT = 8085
-WAYPOINT_RADIUS = 3.0
-PATROL_SPEED = 40
-OBSTACLE_DISTANCE_MM = 800
-LOOP_PATROL = True
-HEADING_OFFSET_DEG = 45.0
-PID_KP, PID_KI, PID_KD = 1.0, 0.05, 0.1
+STATUS_PERIOD_S = 5
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATROL_FILE = os.path.join(PROJECT_ROOT, 'config', 'patrol_route.json')
 ROBOT_CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config', 'robot_config.yaml')
+
+# robot_config.yaml `navigation:` keys -> AutonomousPilot keyword arguments
+_PILOT_OPTIONS = {
+    'patrol_speed': 'patrol_speed',
+    'obstacle_distance': 'obstacle_distance_mm',
+    'loop': 'loop_patrol',
+    'heading_offset_deg': 'heading_offset_deg',
+}
+_PID_OPTIONS = {'kp': 'pid_kp', 'ki': 'pid_ki', 'kd': 'pid_kd'}
+
+
+def _pick(section: dict, names: dict) -> dict:
+    """Keyword arguments for the config keys present (absent ones keep the class default)."""
+    return {kwarg: section[key] for key, kwarg in names.items() if key in section}
 
 
 def load_robot_config() -> dict:
@@ -58,15 +68,42 @@ def _build_motor_pins(config: dict):
     if not pins_cfg:
         return None
     try:
-        return {
-            'FL': MotorPins(ia=pins_cfg['FL_in1'], ib=pins_cfg['FL_in2']),
-            'FR': MotorPins(ia=pins_cfg['FR_in1'], ib=pins_cfg['FR_in2']),
-            'RL': MotorPins(ia=pins_cfg['RL_in1'], ib=pins_cfg['RL_in2']),
-            'RR': MotorPins(ia=pins_cfg['RR_in1'], ib=pins_cfg['RR_in2']),
-        }
+        return {m: MotorPins(ia=pins_cfg[f'{m}_in1'], ib=pins_cfg[f'{m}_in2']) for m in MOTORS}
     except KeyError as e:
         logger.warning(f"Pins moteurs incomplets dans robot_config.yaml ({e}), defauts utilises")
         return None
+
+
+def _init_component(name: str, factory):
+    """Builds one subsystem. A failure is logged and the robot runs without it."""
+    logger.info(f"[{name}] Initialisation...")
+    try:
+        component = factory()
+        logger.info(f"[{name}] OK")
+        return component
+    except Exception as e:
+        logger.error(f"[{name}] Erreur: {e}")
+        return None
+
+
+def _open_uart(port: str, baudrate: int) -> UARTReceiver:
+    receiver = UARTReceiver(port=port, baudrate=baudrate)
+    if not receiver.open():
+        raise RuntimeError(f"impossible d'ouvrir le port {port}")
+    receiver.start_async()
+    return receiver
+
+
+def _start_lidar(port: str, baudrate: int, min_quality: int):
+    from lidar.scanner import LidarScanner
+    scanner = LidarScanner(port=port, baudrate=baudrate, min_quality=min_quality)
+    scanner.start()
+    return scanner
+
+
+def _make_camera(conf_threshold):
+    from camera.ai_camera import AiCamera
+    return AiCamera() if conf_threshold is None else AiCamera(conf_threshold=conf_threshold)
 
 
 class RobotApp:
@@ -74,18 +111,11 @@ class RobotApp:
 
     def __init__(self, enable_motors=True, enable_sensors=True,
                  enable_lidar=True, lidar_port=LIDAR_PORT,
-                 enable_camera=True, camera_conf=0.35,
+                 enable_camera=True, camera_conf=None,
                  web_port=WEB_PORT,
                  auth_username=None, auth_password_hash=None,
                  ssl_cert=None, ssl_key=None,
                  config=None):
-        self.motor_controller = None
-        self.sensor_receiver = None
-        self.lidar_scanner = None
-        self.patrol_manager = None
-        self.pilot = None
-        self.camera = None
-        self.web_server = None
         self._running = False
         self._shutdown_done = False
 
@@ -93,7 +123,6 @@ class RobotApp:
         uart_cfg = config.get('uart', {})
         lidar_cfg = config.get('lidar', {})
         nav_cfg = config.get('navigation', {})
-        pid_cfg = nav_cfg.get('pid', {})
         min_quality = lidar_cfg.get('min_quality', LIDAR_MIN_QUALITY)
         patrol_file_rel = nav_cfg.get('patrol_file')
         self.patrol_file = (
@@ -104,102 +133,41 @@ class RobotApp:
         print("  ROBOT MECANUM - Pi 5 Controller")
         print("=" * 50)
 
-        # Initialize motors
-        if enable_motors:
-            logger.info("[Motors] Initialisation...")
-            try:
-                self.motor_controller = MecanumController(
-                    motor_config=_build_motor_pins(config)
-                )
-                logger.info("[Motors] OK")
-            except Exception as e:
-                logger.error(f"[Motors] Erreur: {e}")
+        self.motor_controller = _init_component(
+            "Motors", lambda: MecanumController(motor_config=_build_motor_pins(config))
+        ) if enable_motors else None
+        self.sensor_receiver = _init_component(
+            "UART", lambda: _open_uart(uart_cfg.get('port', UART_PORT),
+                                       uart_cfg.get('baudrate', UART_BAUDRATE))
+        ) if enable_sensors else None
+        self.lidar_scanner = _init_component(
+            "LiDAR", lambda: _start_lidar(lidar_port,
+                                          lidar_cfg.get('baudrate', LIDAR_BAUDRATE),
+                                          min_quality)
+        ) if enable_lidar else None
+        self.camera = _init_component(
+            "Camera", lambda: _make_camera(camera_conf)
+        ) if enable_camera else None
 
-        # Initialize the UART receiver
-        uart_port = uart_cfg.get('port', UART_PORT)
-        uart_baudrate = uart_cfg.get('baudrate', UART_BAUDRATE)
-        if enable_sensors:
-            logger.info(f"[UART] Initialisation {uart_port}...")
-            try:
-                self.sensor_receiver = UARTReceiver(
-                    port=uart_port,
-                    baudrate=uart_baudrate
-                )
-                if self.sensor_receiver.open():
-                    self.sensor_receiver.start_async(callback=self._on_sensor_data)
-                    logger.info("[UART] OK")
-                else:
-                    logger.error("[UART] Impossible d'ouvrir le port")
-                    self.sensor_receiver = None
-            except Exception as e:
-                logger.error(f"[UART] Erreur: {e}")
-                self.sensor_receiver = None
+        self.patrol_manager = PatrolManager(**_pick(nav_cfg, {'waypoint_radius': 'waypoint_radius'}))
+        self._load_patrol()
 
-        # Initialize the LiDAR
-        if enable_lidar:
-            logger.info(f"[LiDAR] Initialisation {lidar_port}...")
-            try:
-                from lidar.scanner import LidarScanner
-                self.lidar_scanner = LidarScanner(
-                    port=lidar_port,
-                    baudrate=lidar_cfg.get('baudrate', LIDAR_BAUDRATE),
-                    min_quality=min_quality,
-                )
-                self.lidar_scanner.start()
-                logger.info("[LiDAR] OK")
-            except Exception as e:
-                logger.error(f"[LiDAR] Erreur: {e}")
-                self.lidar_scanner = None
-
-        # Initialize the AI camera
-        if enable_camera:
-            logger.info("[Camera] Initialisation...")
-            try:
-                from camera.ai_camera import AiCamera
-                self.camera = AiCamera(conf_threshold=camera_conf)
-            except Exception as e:
-                logger.error(f"[Camera] Erreur: {e}")
-
-        # Initialize the patrol manager
-        logger.info("[Patrol] Initialisation...")
-        self.patrol_manager = PatrolManager(
-            waypoint_radius=nav_cfg.get('waypoint_radius', WAYPOINT_RADIUS)
-        )
-        if os.path.exists(self.patrol_file):
-            try:
-                if self.patrol_manager.load(self.patrol_file):
-                    logger.info(f"[Patrol] {self.patrol_manager.count} waypoints charges")
-                else:
-                    logger.error("[Patrol] Erreur chargement waypoints")
-            except Exception as e:
-                # Malformed JSON must not prevent startup (patrol simply empty)
-                logger.error(f"[Patrol] Fichier waypoints invalide ({e}), patrouille vide")
-        else:
-            logger.info("[Patrol] Aucun parcours sauvegarde")
-
-        # Initialize the autonomous pilot
+        # The pilot needs both the motors and the GPS; the lidar is optional
+        self.pilot = None
         if self.motor_controller and self.sensor_receiver:
-            try:
+            def make_pilot():
                 from navigation.pilot import AutonomousPilot
-                self.pilot = AutonomousPilot(
+                return AutonomousPilot(
                     motor_controller=self.motor_controller,
                     sensor_receiver=self.sensor_receiver,
                     lidar_scanner=self.lidar_scanner,
                     patrol_manager=self.patrol_manager,
-                    patrol_speed=nav_cfg.get('patrol_speed', PATROL_SPEED),
-                    obstacle_distance_mm=nav_cfg.get('obstacle_distance', OBSTACLE_DISTANCE_MM),
-                    loop_patrol=nav_cfg.get('loop', LOOP_PATROL),
-                    heading_offset_deg=nav_cfg.get('heading_offset_deg', HEADING_OFFSET_DEG),
                     min_quality=min_quality,
-                    pid_kp=pid_cfg.get('kp', PID_KP),
-                    pid_ki=pid_cfg.get('ki', PID_KI),
-                    pid_kd=pid_cfg.get('kd', PID_KD),
+                    **_pick(nav_cfg, _PILOT_OPTIONS),
+                    **_pick(nav_cfg.get('pid', {}), _PID_OPTIONS),
                 )
-                logger.info("[Pilot] OK")
-            except Exception as e:
-                logger.error(f"[Pilot] Erreur: {e}")
+            self.pilot = _init_component("Pilot", make_pilot)
 
-        # Initialize the web server
         logger.info(f"[Web] Initialisation serveur sur port {web_port}...")
         self.web_server = WebServer(
             motor_controller=self.motor_controller,
@@ -220,19 +188,23 @@ class RobotApp:
         if ssl_cert:
             logger.info("[Web] TLS actif")
 
-    def _on_sensor_data(self, data: SensorData):
-        """Callback for received sensor data"""
-        pass
+    def _load_patrol(self):
+        if not os.path.exists(self.patrol_file):
+            logger.info("[Patrol] Aucun parcours sauvegarde")
+            return
+        try:
+            if self.patrol_manager.load(self.patrol_file):
+                logger.info(f"[Patrol] {self.patrol_manager.count} waypoints charges")
+            else:
+                logger.error("[Patrol] Erreur chargement waypoints")
+        except Exception as e:
+            # Malformed JSON must not prevent startup (patrol simply empty)
+            logger.error(f"[Patrol] Fichier waypoints invalide ({e}), patrouille vide")
 
     def run(self):
-        """Starts the application"""
+        """Starts the application; returns after shutdown (SIGINT/SIGTERM exit through here)."""
         self._running = True
-
-        # Start the web server
-        if self.web_server:
-            url = self.web_server.start(threaded=True)
-        else:
-            url = "non disponible"
+        url = self.web_server.start(threaded=True)
 
         print("\n" + "-" * 50)
         print("Robot pret!")
@@ -240,20 +212,16 @@ class RobotApp:
         print("Ctrl+C pour arreter")
         print("-" * 50 + "\n")
 
-        if self.camera:
-            self.camera.start()
-
         try:
+            if self.camera:
+                self.camera.start()   # blocks while the IMX500 loads its model
             while self._running:
-                # Process incoming lidar points
-                if self.lidar_scanner:
-                    self.lidar_scanner.process_incoming()
                 self._print_status()
-                time.sleep(5)
+                time.sleep(STATUS_PERIOD_S)
         except KeyboardInterrupt:
             print("\n\nArret demande...")
-
-        self.shutdown()
+        finally:
+            self.shutdown()
 
     def _print_status(self):
         """Displays periodic status"""
@@ -264,7 +232,7 @@ class RobotApp:
             data = self.sensor_receiver.get_last_data()
             if data:
                 status_parts.append(f"GPS: {data.latitude:.4f},{data.longitude:.4f}")
-                status_parts.append(f"IMU: {data.acc_z:.2f}g")
+                status_parts.append(f"Cap: {data.heading:.0f}deg ({data.imu_type})")
             status_parts.append(f"Rx: {stats['packets_received']}")
 
         if self.motor_controller:
@@ -301,7 +269,6 @@ class RobotApp:
 
         if self.motor_controller:
             logger.info("  - Arret moteurs")
-            self.motor_controller.stop()
             self.motor_controller.close()
 
         if self.lidar_scanner:
@@ -312,9 +279,8 @@ class RobotApp:
             logger.info("  - Fermeture UART")
             self.sensor_receiver.close()
 
-        if self.web_server:
-            logger.info("  - Arret serveur web")
-            self.web_server.stop()
+        logger.info("  - Arret serveur web")
+        self.web_server.stop()
 
         logger.info("Programme termine")
 
@@ -386,7 +352,7 @@ def main():
                         help='Desactiver le LiDAR')
     parser.add_argument('--no-camera', action='store_true',
                         help='Désactiver la caméra IA')
-    parser.add_argument('--camera-conf', type=float, default=0.50,
+    parser.add_argument('--camera-conf', type=float, default=None,
                         help='Seuil de confiance caméra (défaut: 0.50)')
     parser.add_argument('--lidar-port', type=str, default=default_lidar_port,
                         help=f'Port LiDAR (defaut: {default_lidar_port})')
@@ -432,8 +398,9 @@ def main():
         ssl_key=ssl_key,
     )
 
+    # SIGINT/SIGTERM (Ctrl+C, systemctl stop) unwind run(), whose `finally`
+    # stops the motors and closes the hardware.
     def signal_handler(sig, frame):
-        app.shutdown()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)

@@ -33,7 +33,9 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 - **Options IMU** : BMI160 (accel + gyro) ou BNO085 9-DOF (accel + gyro + mag, cap absolu à toute vitesse)
 - **Contrôle de vitesse** : Réglable de 30% à 100% depuis l'interface
 - **Navigation autonome** : Patrouille par waypoints GPS avec évitement d'obstacles (LiDAR)
-- **LiDAR RPLidar C1** : Scan 360°, détection d'obstacles, grille d'occupation
+- **Failsafes** : moteurs coupés si le joystick se tait (> 0,5 s), si les trames UART/GPS (> 2 s)
+  ou les scans LiDAR (> 1 s) se figent pendant une patrouille, ou si le thread pilote cesse de battre (> 3 s)
+- **LiDAR RPLidar C1** : Scan 360°, détection d'obstacles (DBSCAN numpy) avec suivi temporel
 - **Caméra IA (IMX500)** : Inférence EfficientDet Lite0 on-chip — détection personnes/animaux avec alertes toast, flux MJPEG en direct
 - **Sécurité** : Authentification HTTP Basic Auth (scrypt), TLS/HTTPS optionnel
 
@@ -56,15 +58,15 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 | VCC    | 3V3           | Alimentation |
 | GND    | GND           | Masse |
 
-### IMU → Pico (I2C1, 400 kHz)
+### IMU → Pico (I2C1, 100 kHz)
 
 Deux options IMU sont supportées sur les mêmes broches. `pico/main.py` **auto-détecte** le capteur branché : BNO085 à `0x4A` en priorité, BMI160 à `0x68` en fallback. Aucune configuration nécessaire.
 
 **Option A — BMI160** (accéléromètre + gyroscope, courant/économique)
 
 > Attention : beaucoup de modules "BMI160" bon marché (AliExpress) sont des clones
-> (chip ID ≠ 0xD1) avec le gyroscope non fonctionnel. Lancer `pico/diag_bmi160.py`
-> dans Thonny pour vérifier.
+> (chip ID ≠ 0xD1) avec le gyroscope non fonctionnel. Le statut PMU affiché au
+> démarrage de `pico/main.py` (`Gyr=OK` / `SUSPEND`) permet de le vérifier.
 
 | BMI160 | Pico (broche) | Description  |
 |--------|---------------|--------------|
@@ -136,8 +138,10 @@ bash scripts/setup_pi5_env.sh
 Le script configure automatiquement :
 - UART3 dans `/boot/firmware/config.txt` (nécessite un reboot)
 - Environnement virtuel Python (`pi5/venv/`)
-- Dépendances système (`python3-lgpio`, `libgpiod-dev`, etc.)
-- Dépendances Python (`flask`, `pyserial`, `gpiod`, etc.)
+- Dépendances système (`python3-libgpiod` — bindings libgpiod v2 importés par
+  `import gpiod`, visibles dans le venv via `--system-site-packages` —, `libgpiod-dev`, etc.)
+- Dépendances Python (`flask`, `cheroot`, `pyserial`, `numpy`, `rplidarc1`, etc. ;
+  plus de scikit-learn/scipy : le clustering lidar est en numpy pur)
 - Permissions GPIO et série (groupes `gpio` et `dialout`)
 - Règle sudoers `/etc/sudoers.d/robot-power` limitée à `shutdown now` et
   `reboot` uniquement, utilisée par les boutons d'extinction de l'interface
@@ -270,13 +274,11 @@ autonomous-robot/
 │   ├── secrets.yaml               # Auth + TLS (ignoré par git)
 │   ├── secrets.yaml.example       # Template pour secrets.yaml
 │   ├── patrol_route.json          # Waypoints de patrouille (créé automatiquement)
-│   ├── sensor_calibration.json    # Offsets calibration IMU et GPS
 │   └── ssl/                       # Certificats TLS (ignoré par git)
 │       ├── cert.pem
 │       └── key.pem
 ├── pico/                          # Code MicroPython (Pico)
 │   ├── main.py                    # Application capteurs principale
-│   ├── diag_bmi160.py             # Script diagnostic BMI160 (à lancer dans Thonny)
 │   └── lib/
 │       ├── bmi160_raw.py          # Driver IMU BMI160 (option A)
 │       ├── bno085.py              # Driver IMU BNO085 9-DOF (option B, recommandé)
@@ -293,7 +295,7 @@ autonomous-robot/
 │   ├── lidar/                     # RPLidar C1 (scans + détection)
 │   │   ├── scanner.py             # Acquisition scans 360°
 │   │   ├── data.py                # Modèles ScanPoint, Scan
-│   │   └── detection/             # DBSCAN, tracking, grille occupation
+│   │   └── detection/             # DBSCAN (numpy), classification mur/objet, tracking
 │   ├── navigation/                # Navigation autonome
 │   │   ├── patrol_manager.py      # Gestion waypoints GPS
 │   │   ├── obstacle_avoider.py    # Évitement obstacles lidar
@@ -301,10 +303,14 @@ autonomous-robot/
 │   ├── camera/
 │   │   └── ai_camera.py           # Caméra IA IMX500 — subprocess dédié (no GIL), 4 fps détection / 15 fps stream
 │   ├── telemetry/
-│   │   └── web_server.py          # Serveur Flask + joystick + lidar + patrouille + caméra
-│   └── tests/                     # Tests unitaires
+│   │   ├── web_server.py          # Serveur Flask + joystick + lidar + patrouille + caméra
+│   │   └── templates/index.html   # Interface web (HTML/JS)
+│   └── tests/                     # Tests unitaires (pytest, sans matériel)
 └── scripts/
-    └── setup_pi5_env.sh           # Script d'installation Pi5
+    ├── setup_pi5_env.sh           # Script d'installation Pi5
+    ├── robot.service              # Modèle du service systemd (installé par setup_pi5_env.sh)
+    ├── setup_ap.sh                # Point d'accès WiFi RobotPatroller (NetworkManager)
+    └── switch-to-ap.sh / switch-to-client.sh   # Bascule AP ↔ WiFi maison
 ```
 
 ## Protocole UART
@@ -316,8 +322,8 @@ Octet  0     : STX (0x02)
 Octet  1     : LEN (30 = longueur payload)
 Octets 2-31  : PAYLOAD (30 bytes)
   2-3        : Séquence          (uint16, 0-65535)
-  4-5        : Accéléromètre X   (int16, en mg)
-  6-7        : Accéléromètre Y   (int16, en mg)
+  4-5        : Accéléromètre X   (int16, en mg — avec BNO085 : pitch en 0.01°)
+  6-7        : Accéléromètre Y   (int16, en mg — avec BNO085 : roll en 0.01°)
   8-9        : Accéléromètre Z   (int16, en mg)
   10-11      : Gyroscope X       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
   12-13      : Gyroscope Y       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
@@ -418,7 +424,7 @@ Les vitesses sont normalisées par la valeur maximale pour éviter la saturation
 
 - [x] Valider câblage moteurs et sens de rotation
 - [x] Tester interface joystick sur smartphone
-- [x] Calibrer IMU BMI160 au repos (accéléromètre OK ; gyroscope HS sur les clones — voir diag_bmi160.py)
+- [x] Calibrer IMU BMI160 au repos (accéléromètre OK ; gyroscope HS sur les clones)
 - [x] Valider réception GPS en extérieur (premier fix)
 - [x] Écrire tests unitaires (`pi5/tests/`)
 - [x] Intégrer navigation autonome par waypoints GPS

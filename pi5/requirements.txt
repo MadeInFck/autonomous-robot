@@ -1,8 +1,9 @@
 # Serial/UART Communication
 pyserial==3.5
 
-# GPIO Control (Pi5 compatible)
-lgpio>=0.2.2.0
+# GPIO Control: libgpiod v2 Python bindings (`import gpiod`), installed by
+# setup_pi5_env.sh as the system package python3-libgpiod (the venv is created
+# with --system-site-packages)
 
 # Web Server
 flask==3.0.0
