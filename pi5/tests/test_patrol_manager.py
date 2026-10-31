@@ -161,6 +161,17 @@ class TestPersistence:
         finally:
             os.unlink(filepath)
 
+    def test_config_radius_wins_over_route_file(self, pm, tmp_path):
+        """An old route file carrying a radius must not override the config."""
+        route = tmp_path / "route.json"
+        route.write_text(json.dumps({"waypoints": [], "waypoint_radius": 9.0}))
+        pm.record_waypoint(1.0, 1.0)
+        pm.save(str(route))
+        assert "waypoint_radius" not in json.loads(route.read_text())
+        route.write_text(json.dumps({"waypoints": [], "waypoint_radius": 9.0}))
+        assert pm.load(str(route))
+        assert pm.waypoint_radius == 3.0
+
     def test_load_nonexistent(self, pm):
         assert pm.load("/tmp/nonexistent_file_xyz.json") is False
 

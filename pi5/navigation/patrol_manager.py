@@ -29,7 +29,7 @@ class PatrolManager:
       - Bearing and distance calculation (haversine)
     """
 
-    def __init__(self, waypoint_radius: float = 4.0):
+    def __init__(self, waypoint_radius: float = 3.0):
         """
         Args:
             waypoint_radius: Distance in meters to consider a waypoint reached.
@@ -150,10 +150,13 @@ class PatrolManager:
     # --- JSON persistence ---
 
     def save(self, filepath: str):
-        """Saves waypoints to JSON."""
+        """Saves waypoints to JSON.
+
+        Only the route: waypoint_radius is a setting (robot_config.yaml), a
+        copy stored here used to silently override later edits of the config.
+        """
         data = {
             "waypoints": [asdict(wp) for wp in self._waypoints],
-            "waypoint_radius": self.waypoint_radius,
             "wp_counter": self._wp_counter,
         }
         os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
@@ -169,8 +172,6 @@ class PatrolManager:
         self._waypoints = [
             Waypoint(**wp) for wp in data.get("waypoints", [])
         ]
-        if "waypoint_radius" in data:
-            self.waypoint_radius = data["waypoint_radius"]
         self._wp_counter = data.get("wp_counter", len(self._waypoints))
         self._current_index = 0
         return True

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lidar.detection.types import (
     BoundingBox, DetectionResult, Obstacle, ObstacleType,
 )
-from navigation.obstacle_avoider import ObstacleAvoider
+from navigation.obstacle_avoider import ObstacleAvoider, angle_diff
 
 
 def make_obstacle(angle_deg: float, distance_mm: float, obstacle_id: int = 0):
@@ -114,20 +114,24 @@ class TestBlocked:
 
 class TestAngleDiff:
     def test_zero_diff(self):
-        assert ObstacleAvoider._angle_diff(90, 90) == 0
+        assert angle_diff(90, 90) == 0
 
     def test_positive_diff(self):
-        diff = ObstacleAvoider._angle_diff(100, 90)
+        diff = angle_diff(100, 90)
         assert abs(diff - 10) < 0.01
 
     def test_negative_diff(self):
-        diff = ObstacleAvoider._angle_diff(80, 90)
+        diff = angle_diff(80, 90)
         assert abs(diff - (-10)) < 0.01
 
     def test_wrap_around(self):
-        diff = ObstacleAvoider._angle_diff(10, 350)
+        diff = angle_diff(10, 350)
         assert abs(diff - 20) < 0.01
 
     def test_wrap_around_negative(self):
-        diff = ObstacleAvoider._angle_diff(350, 10)
+        diff = angle_diff(350, 10)
         assert abs(diff - (-20)) < 0.01
+
+    def test_robot_frame_left_is_negative(self):
+        """A free sector at 345deg (robot frame) is a 15deg turn to the LEFT."""
+        assert angle_diff(345, 0) == -15

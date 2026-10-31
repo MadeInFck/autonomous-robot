@@ -10,7 +10,6 @@ import numpy as np
 class ObstacleType(Enum):
     """Detected obstacle type."""
     WALL = "wall"
-    CORNER = "corner"
     OBJECT = "object"
     UNKNOWN = "unknown"
 
@@ -24,16 +23,7 @@ class LineSegment:
     normal: np.ndarray         # (2,) unit normal vector
     length_mm: float           # segment length in mm
     fit_error_mm: float        # RMS fit error in mm
-
-    def to_dict(self) -> dict:
-        return {
-            "start": self.start.tolist(),
-            "end": self.end.tolist(),
-            "direction": self.direction.tolist(),
-            "normal": self.normal.tolist(),
-            "length_mm": self.length_mm,
-            "fit_error_mm": self.fit_error_mm,
-        }
+    linearity: float           # PCA linearity ratio (0.5=disc, 1=line)
 
 
 @dataclass
@@ -43,24 +33,6 @@ class BoundingBox:
     x_max: float
     y_min: float
     y_max: float
-
-    @property
-    def width(self) -> float:
-        return self.x_max - self.x_min
-
-    @property
-    def height(self) -> float:
-        return self.y_max - self.y_min
-
-    @property
-    def center(self) -> tuple[float, float]:
-        return ((self.x_min + self.x_max) / 2, (self.y_min + self.y_max) / 2)
-
-    def to_dict(self) -> dict:
-        return {
-            "x_min": self.x_min, "x_max": self.x_max,
-            "y_min": self.y_min, "y_max": self.y_max,
-        }
 
 
 @dataclass
@@ -77,19 +49,6 @@ class Obstacle:
     num_points: int
     angular_span_deg: float            # angular span from origin
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "type": self.type.value,
-            "centroid": self.centroid.tolist(),
-            "nearest_distance_mm": self.nearest_distance_mm,
-            "nearest_point": self.nearest_point.tolist(),
-            "bbox": self.bbox.to_dict(),
-            "line_segment": self.line_segment.to_dict() if self.line_segment else None,
-            "num_points": self.num_points,
-            "angular_span_deg": self.angular_span_deg,
-        }
-
 
 @dataclass
 class DetectionResult:
@@ -105,7 +64,3 @@ class DetectionResult:
         if not self.obstacles:
             return None
         return min(self.obstacles, key=lambda o: o.nearest_distance_mm)
-
-    def by_type(self, obstacle_type: ObstacleType) -> list[Obstacle]:
-        """Filters obstacles by type."""
-        return [o for o in self.obstacles if o.type == obstacle_type]

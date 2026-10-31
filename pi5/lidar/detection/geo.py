@@ -10,29 +10,25 @@ def fit_line_segment(points: np.ndarray) -> LineSegment:
     centroid = points.mean(axis=0)
     centered = points - centroid
 
-    cov = np.cov(centered.T)
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
-
+    eigenvalues, eigenvectors = np.linalg.eigh(np.cov(centered.T))
     direction = eigenvectors[:, 1]
     normal = eigenvectors[:, 0]
 
     projections = centered @ direction
     t_min, t_max = projections.min(), projections.max()
 
-    start = centroid + t_min * direction
-    end = centroid + t_max * direction
-    length_mm = float(t_max - t_min)
-
     errors = centered @ normal
-    fit_error_mm = float(np.sqrt(np.mean(errors ** 2)))
+    total = eigenvalues.sum()
 
     return LineSegment(
-        start=start,
-        end=end,
+        start=centroid + t_min * direction,
+        end=centroid + t_max * direction,
         direction=direction,
         normal=normal,
-        length_mm=length_mm,
-        fit_error_mm=fit_error_mm,
+        length_mm=float(t_max - t_min),
+        fit_error_mm=float(np.sqrt(np.mean(errors ** 2))),
+        # Share of the variance along the main axis (0.5=disc, 1=line)
+        linearity=float(eigenvalues[1] / total) if total > 0 else 0.0,
     )
 
 
@@ -49,10 +45,7 @@ def compute_bounding_box(points: np.ndarray) -> BoundingBox:
 def compute_angular_span(points: np.ndarray) -> float:
     """Computes the angular span of points as seen from the origin (in degrees)."""
     angles = np.arctan2(points[:, 0], points[:, 1])
-    angle_min = angles.min()
-    angle_max = angles.max()
-
-    span = angle_max - angle_min
+    span = angles.max() - angles.min()
     if span > np.pi:
         angles_shifted = angles % (2 * np.pi)
         span = angles_shifted.max() - angles_shifted.min()
@@ -60,19 +53,3 @@ def compute_angular_span(points: np.ndarray) -> float:
             span = 2 * np.pi - span
 
     return float(np.degrees(span))
-
-
-def linearity_ratio(points: np.ndarray) -> float:
-    """PCA-based linearity ratio (0=disc, 1=line)."""
-    if len(points) < 2:
-        return 0.0
-
-    centered = points - points.mean(axis=0)
-    cov = np.cov(centered.T)
-    eigenvalues = np.linalg.eigvalsh(cov)
-
-    total = eigenvalues.sum()
-    if total == 0:
-        return 0.0
-
-    return float(eigenvalues[1] / total)

@@ -22,9 +22,13 @@ mock_pid_instance.return_value = 0.0
 mock_pid_class.return_value = mock_pid_instance
 sys.modules['simple_pid'].PID = mock_pid_class
 
+import numpy as np
+
 from navigation.pilot import AutonomousPilot, PilotState
 from navigation.patrol_manager import PatrolManager
 from sensors.uart_receiver import SensorData
+from lidar.data import Scan
+from lidar.detection.types import BoundingBox, DetectionResult, Obstacle, ObstacleType
 
 
 def make_sensor_data(lat=48.8566, lon=2.3522, heading=0, has_fix=True,
@@ -160,12 +164,116 @@ class TestControlHeartbeat:
         assert pilot.control_heartbeat_age() == 0.0
 
 
-class TestAngleDiff:
-    def test_no_diff(self):
-        assert AutonomousPilot._angle_diff(90, 90) == 0
+def make_obstacle(angle_deg, distance_mm):
+    a = np.radians(angle_deg)
+    c = np.array([distance_mm * np.sin(a), distance_mm * np.cos(a)])
+    return Obstacle(
+        id=0, type=ObstacleType.OBJECT, points_xy=c[None, :], centroid=c,
+        nearest_distance_mm=distance_mm, nearest_point=c.copy(),
+        bbox=BoundingBox(c[0] - 50, c[0] + 50, c[1] - 50, c[1] + 50),
+        line_segment=None, num_points=5, angular_span_deg=10.0,
+    )
 
-    def test_positive(self):
-        assert abs(AutonomousPilot._angle_diff(100, 90) - 10) < 0.01
 
-    def test_wrap(self):
-        assert abs(AutonomousPilot._angle_diff(10, 350) - 20) < 0.01
+@pytest.fixture
+def lidar_pilot(mock_components):
+    """Pilot with a lidar whose detections the test controls."""
+    motors, sensors, _, pm = mock_components
+    sensors.get_last_data.return_value = make_sensor_data()
+    lidar = MagicMock()
+    lidar.get_last_scan.return_value = Scan(timestamp=time.time())
+    pilot = AutonomousPilot(motors, sensors, lidar, pm)
+    pilot.tracker.update = lambda result: result     # no confirmation delay
+    pilot.detector.detect = MagicMock(return_value=DetectionResult())
+    return pilot, motors, lidar
+
+
+class TestLidarIntegration:
+    def test_free_sector_on_the_left_steers_left(self, lidar_pilot):
+        """Front and front-right blocked: the free sector is at 345deg (robot
+        frame). It used to reach the PID as +345, i.e. a hard RIGHT turn into
+        the obstacle."""
+        pilot, motors, _ = lidar_pilot
+        pilot.detector.detect.return_value = DetectionResult(obstacles=[
+            make_obstacle(15, 500), make_obstacle(45, 500),
+        ])
+        mock_pid_instance.reset_mock()
+        pilot._control_step()
+        assert pilot.state == PilotState.AVOIDING
+        heading_error = mock_pid_instance.call_args[0][0]
+        assert heading_error == -15
+
+    def test_blocked_stops(self, lidar_pilot):
+        pilot, motors, _ = lidar_pilot
+        pilot.detector.detect.return_value = DetectionResult(obstacles=[
+            make_obstacle(a, 400) for a in range(15, 360, 30)
+        ])
+        pilot._control_step()
+        motors.stop.assert_called()
+        motors.move.assert_not_called()
+
+    def test_frozen_lidar_stops(self, lidar_pilot):
+        """Lidar unplugged mid-patrol: never drive on the last scan."""
+        pilot, motors, lidar = lidar_pilot
+        lidar.get_last_scan.return_value = Scan(timestamp=time.time() - 5)
+        pilot._control_step()
+        motors.stop.assert_called()
+        motors.move.assert_not_called()
+        assert pilot.get_status()["lidar_stale"] is True
+
+    def test_no_scan_yet_stops(self, lidar_pilot):
+        pilot, motors, lidar = lidar_pilot
+        lidar.get_last_scan.return_value = None
+        pilot._control_step()
+        motors.move.assert_not_called()
+
+    def test_clear_path_drives(self, lidar_pilot):
+        pilot, motors, _ = lidar_pilot
+        pilot._control_step()
+        motors.move.assert_called_once()
+        assert pilot.state == PilotState.NAVIGATING
+        assert pilot.get_status()["lidar_stale"] is False
+
+    def test_each_scan_detected_once(self, lidar_pilot):
+        """The tracker would count a re-processed scan as a new confirmation."""
+        pilot, _, lidar = lidar_pilot
+        for _ in range(3):
+            pilot._control_step()
+        assert pilot.detector.detect.call_count == 1
+        lidar.get_last_scan.return_value = Scan(timestamp=time.time())
+        pilot._control_step()
+        assert pilot.detector.detect.call_count == 2
+
+
+class TestActivity:
+    def test_active_only_while_running(self, mock_components):
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        assert pilot.is_active() is False
+        pilot.start()
+        try:
+            assert pilot.is_active() is True
+        finally:
+            pilot.stop()
+        assert pilot.is_active() is False
+
+    def test_patrol_complete_releases_motors(self, mock_components):
+        """Last waypoint reached (no loop): manual control must come back."""
+        motors, sensors, lidar, _ = mock_components
+        pm = PatrolManager(waypoint_radius=3.0)
+        pm.record_waypoint(48.8566, 2.3522)          # where the robot stands
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm, loop_patrol=False)
+        pilot.start()
+        time.sleep(0.3)
+        assert pilot.state == PilotState.PATROL_COMPLETE
+        assert pilot.is_active() is False
+        pilot.stop()
+
+    def test_bearing_north_is_reported(self, mock_components):
+        """bearing 0.0 (due north) used to be dropped as falsy."""
+        motors, sensors, lidar, pm = mock_components
+        sensors.get_last_data.return_value = make_sensor_data()
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        assert pilot.get_status()["bearing"] == 0.0

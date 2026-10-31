@@ -16,7 +16,7 @@ from lidar.scanner import LidarScanner
 from lidar.detection.obstacles import ObstacleDetector
 from lidar.detection.tracker import ObstacleTracker
 from navigation.patrol_manager import PatrolManager
-from navigation.obstacle_avoider import ObstacleAvoider
+from navigation.obstacle_avoider import ObstacleAvoider, angle_diff
 
 logger = logging.getLogger(__name__)
 
@@ -26,29 +26,43 @@ class PilotState(Enum):
     IDLE = auto()
     NAVIGATING = auto()
     AVOIDING = auto()
-    WAYPOINT_REACHED = auto()
     PATROL_COMPLETE = auto()
 
 
 # --- Navigation constants ---
-_HEADING_DEAD_ZONE = 10.0  # deg  — ignore small errors (GPS noise)
-_GPS_STALE_S = 2.0  # s — max age of the last UART frame before failsafe stop
+_CONTROL_PERIOD_S = 0.2       # s   — control loop at 5 Hz
+_HEADING_DEAD_ZONE = 10.0     # deg — ignore small errors (GPS noise)
+_GPS_STALE_S = 2.0            # s   — max age of the last UART frame before failsafe stop
+_LIDAR_STALE_S = 1.0          # s   — max age of the last lidar scan (~10/s) before failsafe stop
+_WAYPOINT_COOLDOWN_S = 5.0    # s   — skip arrival checks right after reaching a waypoint
+_SLOWDOWN_DISTANCE_M = 5.0    # m   — decelerate (and damp rotation) under this distance
+_MIN_PATROL_SPEED = 20        # %   — below this the motors stall
+
+
+def _log_transition(was_bad: bool, is_bad: bool, went_bad: str, recovered: str) -> bool:
+    """Logs a failsafe flag change once per transition and returns the new value."""
+    if is_bad != was_bad:
+        if is_bad:
+            logger.warning(went_bad)
+        else:
+            logger.info(recovered)
+    return is_bad
 
 
 class AutonomousPilot:
     """Autonomous pilot combining GPS navigation and lidar avoidance.
 
     State machine:
-      IDLE → NAVIGATING ──(obstacle blocked)──► AVOIDING
-                │              (avoiding)──► heading corrected, resume
+      IDLE → NAVIGATING ⇄ AVOIDING   (obstacle in the frontal corridor)
                 │
-                └──(waypoint reached)──► WAYPOINT_REACHED
-                        └── advance ──► NAVIGATING
-                        └── last WP ──► PATROL_COMPLETE or loop
+                └──(waypoint reached)──► next waypoint, NAVIGATING
+                                    └── last WP ──► PATROL_COMPLETE, or loop
 
     Heading correction uses PID arc navigation (omega while moving forward).
-    Control loop at ~5 Hz in a dedicated thread.
+    Control loop at 5 Hz in a dedicated thread.
     Waypoint detection uses raw GPS; bearing/heading use smoothed average.
+    Failsafe: motors stop while the GPS fix, the UART link or the lidar
+    (when one is configured) is missing or stale.
     """
 
     def __init__(
@@ -79,8 +93,7 @@ class AutonomousPilot:
         self.tracker = ObstacleTracker()
         self.avoider = ObstacleAvoider(obstacle_distance_mm=obstacle_distance_mm)
 
-        # PID for heading control (output = omega for motors)
-        # Setpoint will be the bearing to the waypoint
+        # Heading PID: input = heading error, setpoint 0, output = -omega
         self._heading_pid = PID(
             Kp=pid_kp, Ki=pid_ki, Kd=pid_kd,
             setpoint=0,
@@ -100,12 +113,14 @@ class AutonomousPilot:
         self._gps_hdg_buffer: deque = deque(maxlen=5)   # heading degrees
         self._last_gps_timestamp: float = 0.0
 
-        # Cooldown after reaching a waypoint: skip is_target_reached for N seconds
-        # Prevents cascading through all waypoints if spacing < waypoint_radius
+        # Cooldown after reaching a waypoint: prevents cascading through all
+        # waypoints if their spacing is below waypoint_radius
         self._waypoint_cooldown_until: float = 0.0
-        self._WAYPOINT_COOLDOWN = 5.0  # seconds
 
-        # Last lidar detection (for the web API)
+        # Last scan run through the detector, and its result (also read by
+        # the web API). A scan is only processed once: the tracker would
+        # otherwise count the same frame as several confirmations.
+        self._last_scan = None
         self._last_detection = None
 
         # Liveness heartbeat, refreshed at every control cycle. The web
@@ -114,14 +129,15 @@ class AutonomousPilot:
         # last command (see control_heartbeat_age).
         self._last_step_time: float = 0.0
 
-        # Failsafe: True while the last UART frame is older than _GPS_STALE_S
-        # (Pico dead, cable unplugged). Without this check the pilot would keep
-        # navigating on a frozen position forever.
+        # Failsafes: True while the last UART frame / lidar scan is too old
+        # (Pico dead, cable unplugged, lidar USB lost). Without these checks
+        # the pilot would keep driving on a frozen position or a frozen scan.
         self._gps_stale = False
+        self._lidar_stale = False
 
         # Live navigation debug values (exposed via get_status for the web UI)
         self._dbg_bearing: float = 0.0        # bearing to active WP (deg)
-        self._dbg_avg_heading: float = 0.0    # smoothed GPS COG (deg)
+        self._dbg_avg_heading: float = 0.0    # smoothed heading (deg)
         self._dbg_heading_error: float = 0.0  # bearing - heading (deg)
         self._dbg_omega: float = 0.0          # last omega commanded
         self._dbg_speed: float = 0.0          # gps.speed (m/s) seen by pilot
@@ -131,36 +147,45 @@ class AutonomousPilot:
         with self._lock:
             return self._state
 
+    def _set_state(self, state: PilotState):
+        with self._lock:
+            self._state = state
+
+    def is_active(self) -> bool:
+        """True while the control loop owns the motors.
+
+        Cheap (no GPS maths): the web server asks on every manual command and
+        on every watchdog tick. A finished patrol (PATROL_COMPLETE) is not
+        active, so manual control comes back without pressing stop first.
+        """
+        return self._running
+
     def get_status(self) -> dict:
         """Returns the current state for the web API."""
-        with self._lock:
-            state = self._state
-
         target = self.patrol.get_current_target()
         gps = self.sensors.get_last_data() if self.sensors else None
 
         status = {
-            "state": state.name,
+            "state": self.state.name,
             "waypoint_index": self.patrol.current_index,
             "waypoint_count": self.patrol.count,
             "loop": self.loop_patrol,
             "gps_stale": self._gps_stale,
+            "lidar_stale": self._lidar_stale,
         }
 
         if target and gps and gps.has_fix:
-            dist = self.patrol.distance_to_target(gps.latitude, gps.longitude)
-            bearing = self.patrol.bearing_to_target(gps.latitude, gps.longitude)
-            status["distance_m"] = round(dist, 1) if dist else None
-            status["bearing"] = round(bearing, 1) if bearing else None
+            status["distance_m"] = round(self.patrol.distance_to_target(gps.latitude, gps.longitude), 1)
+            status["bearing"] = round(self.patrol.bearing_to_target(gps.latitude, gps.longitude), 1)
             status["target_lat"] = target.latitude
             status["target_lon"] = target.longitude
 
         # Live debug telemetry for UI
-        status["dbg_bearing"]       = round(self._dbg_bearing, 1)
-        status["dbg_avg_heading"]   = round(self._dbg_avg_heading, 1)
+        status["dbg_bearing"] = round(self._dbg_bearing, 1)
+        status["dbg_avg_heading"] = round(self._dbg_avg_heading, 1)
         status["dbg_heading_error"] = round(self._dbg_heading_error, 1)
-        status["dbg_omega"]         = round(self._dbg_omega, 2)
-        status["dbg_speed"]         = round(self._dbg_speed, 2)
+        status["dbg_omega"] = round(self._dbg_omega, 2)
+        status["dbg_speed"] = round(self._dbg_speed, 2)
 
         return status
 
@@ -187,6 +212,7 @@ class AutonomousPilot:
             return
 
         self.patrol.reset()
+        self._heading_pid.reset()
         self._waypoint_cooldown_until = 0.0
         self._gps_pos_buffer.clear()
         self._gps_hdg_buffer.clear()
@@ -195,8 +221,7 @@ class AutonomousPilot:
         # would see a stale value during the first cycles.
         self._last_step_time = time.time()
         self._running = True
-        with self._lock:
-            self._state = PilotState.NAVIGATING
+        self._set_state(PilotState.NAVIGATING)
 
         self._thread = threading.Thread(target=self._control_loop, daemon=True)
         self._thread.start()
@@ -210,34 +235,36 @@ class AutonomousPilot:
             self._thread.join(timeout=2)
         if self.motors:
             self.motors.stop()
-        with self._lock:
-            self._state = PilotState.IDLE
+        self._set_state(PilotState.IDLE)
         logger.info("Patrouille arretee")
 
     def _control_loop(self):
-        """Main control loop (~5 Hz)."""
+        """Main control loop (5 Hz)."""
         while self._running:
             self._last_step_time = time.time()
             try:
                 self._control_step()
             except Exception as e:
                 logger.error(f"Erreur pilote: {e}")
-            time.sleep(0.2)  # 5 Hz
+            time.sleep(_CONTROL_PERIOD_S)
+
+    def _halt(self):
+        if self.motors:
+            self.motors.stop()
 
     def _control_step(self):
         """One step of the control loop."""
+        now = time.time()
+
         # 1. Read sensors and feed GPS smoothing buffers (unique readings only)
         gps = self.sensors.get_last_data() if self.sensors else None
-        stale = gps is not None and (time.time() - gps.timestamp) > _GPS_STALE_S
-        if stale != self._gps_stale:
-            if stale:
-                logger.warning("Donnees UART/GPS perimees (Pico muet ?) — arret failsafe")
-            else:
-                logger.info("Donnees UART/GPS de nouveau fraiches")
-            self._gps_stale = stale
-        if gps is None or stale or not gps.has_fix:
-            if self.motors:
-                self.motors.stop()
+        self._gps_stale = _log_transition(
+            self._gps_stale,
+            gps is not None and (now - gps.timestamp) > _GPS_STALE_S,
+            "Donnees UART/GPS perimees (Pico muet ?) — arret failsafe",
+            "Donnees UART/GPS de nouveau fraiches")
+        if gps is None or self._gps_stale or not gps.has_fix:
+            self._halt()
             return
         if gps.timestamp != self._last_gps_timestamp:
             self._gps_pos_buffer.append((gps.latitude, gps.longitude))
@@ -246,7 +273,6 @@ class AutonomousPilot:
             if not gps.imu_calibrated and gps.heading is not None and gps.heading > 0.1:
                 self._gps_hdg_buffer.append(gps.heading)
             self._last_gps_timestamp = gps.timestamp
-
         if not self._gps_pos_buffer:
             return
 
@@ -266,30 +292,35 @@ class AutonomousPilot:
         else:
             avg_heading = 0.0
 
-        # 2. Lidar detection — single evaluation, result reused below
-        detection = None
+        # 2. Lidar: a configured lidar that stopped producing scans is treated
+        #    like stale GPS — the robot must never drive blind.
         avoidance = None
         if self.lidar:
-            self.lidar.process_incoming()
             scan = self.lidar.get_last_scan()
-            if scan:
-                raw_detection = self.detector.detect(scan)
-                detection = self.tracker.update(raw_detection)
-                self._last_detection = detection
-                avoidance = self.avoider.evaluate(detection, 0)
+            self._lidar_stale = _log_transition(
+                self._lidar_stale,
+                scan is None or (now - scan.timestamp) > _LIDAR_STALE_S,
+                "Scans lidar perimes (lidar deconnecte ?) — arret failsafe",
+                "Scans lidar de nouveau frais")
+            if self._lidar_stale:
+                self._halt()
+                return
+            if scan is not self._last_scan:
+                self._last_scan = scan
+                self._last_detection = self.tracker.update(self.detector.detect(scan))
+            avoidance = self.avoider.evaluate(self._last_detection, 0)
 
         # 3. Check if waypoint reached — raw GPS avoids averaging lag
         #    (skip during cooldown to prevent cascading through close waypoints)
-        if time.time() >= self._waypoint_cooldown_until:
-            if self.patrol.is_target_reached(gps.latitude, gps.longitude):
-                self._on_waypoint_reached()
-                return
+        if now >= self._waypoint_cooldown_until and \
+           self.patrol.is_target_reached(gps.latitude, gps.longitude):
+            self._on_waypoint_reached()
+            return
 
         # 4. Bearing and distance to current target (averaged position for stability)
         bearing = self.patrol.bearing_to_target(avg_lat, avg_lon)
         if bearing is None:
-            if self.motors:
-                self.motors.stop()
+            self._halt()
             return
         distance = self.patrol.distance_to_target(avg_lat, avg_lon)
         self._dbg_bearing = bearing
@@ -298,43 +329,39 @@ class AutonomousPilot:
 
         # 5. Hard obstacle: stop immediately
         if avoidance and avoidance.status == "blocked":
-            with self._lock:
-                self._state = PilotState.AVOIDING
-            if self.motors:
-                self.motors.stop()
+            self._set_state(PilotState.AVOIDING)
+            self._halt()
             return
 
         # 6. Heading error (dead zone filters noise)
         # With BNO085: heading always valid. With GPS COG: invalid until robot moves.
-        heading_valid = gps.imu_calibrated or bool(self._gps_hdg_buffer)
-        if not heading_valid:
-            heading_error = 0.0  # no heading yet → go straight
-        else:
-            heading_error = self._angle_diff(bearing, avg_heading)
+        if gps.imu_calibrated or self._gps_hdg_buffer:
+            heading_error = angle_diff(bearing, avg_heading)
             if abs(heading_error) < _HEADING_DEAD_ZONE:
                 heading_error = 0.0
+        else:
+            heading_error = 0.0  # no heading yet → go straight
         self._dbg_heading_error = heading_error
 
-        # 7. Soft obstacle: redirect heading; otherwise navigate normally
+        # 7. Soft obstacle: steer toward the free sector; otherwise navigate.
+        #    The sector is a robot-frame direction (0..360, clockwise from the
+        #    front): it must become a signed error, or a free sector on the
+        #    left (e.g. 345°) would be read as a hard right turn.
         if avoidance and avoidance.status == "avoiding":
-            with self._lock:
-                self._state = PilotState.AVOIDING
-            heading_error = avoidance.suggested_heading
+            self._set_state(PilotState.AVOIDING)
+            heading_error = angle_diff(avoidance.suggested_heading, 0)
         else:
-            with self._lock:
-                self._state = PilotState.NAVIGATING
+            self._set_state(PilotState.NAVIGATING)
 
         # 8. PID → omega
-        self._heading_pid.setpoint = 0
         omega = -self._heading_pid(heading_error)
 
-        # 9. Speed proportional to distance (decelerate under 5 m)
-        speed_factor = min(1.0, distance / 5.0) if distance is not None else 1.0
-        speed = max(20, int(self.patrol_speed * speed_factor))
-
-        # Reduce omega near waypoint so forward motion dominates over rotation
-        if distance is not None and distance < 5.0:
-            omega *= distance / 5.0
+        # 9. Speed proportional to distance; damp rotation near the waypoint
+        #    so forward motion dominates
+        if distance < _SLOWDOWN_DISTANCE_M:
+            omega *= distance / _SLOWDOWN_DISTANCE_M
+        speed = max(_MIN_PATROL_SPEED,
+                    int(self.patrol_speed * min(1.0, distance / _SLOWDOWN_DISTANCE_M)))
 
         self._dbg_omega = omega
         # 10. Command motors: forward + heading correction
@@ -345,35 +372,20 @@ class AutonomousPilot:
         """Called when a waypoint is reached."""
         logger.info(f"Waypoint {self.patrol.current_index} atteint!")
         # Stop motors and reset PID state to avoid windup / derivative kick on the new leg
-        if self.motors:
-            self.motors.stop()
+        self._halt()
         self._heading_pid.reset()
         # Clear stale heading buffer: heading was computed while moving toward
         # the old waypoint; it's no longer valid for the next leg.
         self._gps_hdg_buffer.clear()
-        # Arm cooldown: next waypoint won't be checked for N seconds
-        self._waypoint_cooldown_until = time.time() + self._WAYPOINT_COOLDOWN
+        self._waypoint_cooldown_until = time.time() + _WAYPOINT_COOLDOWN_S
 
-        if not self.patrol.advance():
-            # Patrol complete
-            if self.loop_patrol:
-                logger.info("Patrouille terminee, recommence en boucle")
-                self.patrol.reset()
-                with self._lock:
-                    self._state = PilotState.NAVIGATING
-            else:
-                logger.info("Patrouille terminee")
-                if self.motors:
-                    self.motors.stop()
-                with self._lock:
-                    self._state = PilotState.PATROL_COMPLETE
-                self._running = False
+        if self.patrol.advance():
+            self._set_state(PilotState.NAVIGATING)
+        elif self.loop_patrol:
+            logger.info("Patrouille terminee, recommence en boucle")
+            self.patrol.reset()
+            self._set_state(PilotState.NAVIGATING)
         else:
-            with self._lock:
-                self._state = PilotState.NAVIGATING
-
-    @staticmethod
-    def _angle_diff(a: float, b: float) -> float:
-        """Signed angle difference, result in [-180, 180]."""
-        diff = (a - b + 180) % 360 - 180
-        return diff
+            logger.info("Patrouille terminee")
+            self._set_state(PilotState.PATROL_COMPLETE)
+            self._running = False

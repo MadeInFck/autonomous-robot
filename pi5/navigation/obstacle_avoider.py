@@ -7,6 +7,11 @@ from typing import Optional
 from lidar.detection.types import DetectionResult
 
 
+def angle_diff(a: float, b: float) -> float:
+    """Signed angle difference a - b, result in [-180, 180)."""
+    return (a - b + 180) % 360 - 180
+
+
 @dataclass
 class AvoidanceResult:
     """Result of the avoidance analysis."""
@@ -22,9 +27,9 @@ class ObstacleAvoider:
     Divides the field of view into sectors and finds the free passage
     closest to the desired heading.
 
-    Convention: 0deg = robot front (+Y), 90deg = right (+X).
-    Robot heading is given by GPS heading.
-    Lidar angles are in robot frame (0deg = forward).
+    Convention: robot frame, 0deg = front (+Y), 90deg = right (+X).
+    suggested_heading is a robot-frame direction in [0, 360): callers that
+    need a signed steering error must pass it through angle_diff().
     """
 
     def __init__(
@@ -116,8 +121,7 @@ class ObstacleAvoider:
         min_dist = float('inf')
         for i in range(self.num_sectors):
             sector_center = (i + 0.5) * self.sector_size
-            diff = self._angle_diff(sector_center, heading)
-            if abs(diff) <= self.corridor_half_angle:
+            if abs(angle_diff(sector_center, heading)) <= self.corridor_half_angle:
                 if sector_min_dist[i] < min_dist:
                     min_dist = sector_min_dist[i]
         return min_dist
@@ -132,15 +136,9 @@ class ObstacleAvoider:
         for i in range(self.num_sectors):
             if sector_min_dist[i] > self.obstacle_distance_mm:
                 sector_center = (i + 0.5) * self.sector_size
-                diff = abs(self._angle_diff(sector_center, desired_heading))
+                diff = abs(angle_diff(sector_center, desired_heading))
                 if diff < best_diff:
                     best_diff = diff
                     best_heading = sector_center
 
         return best_heading
-
-    @staticmethod
-    def _angle_diff(a: float, b: float) -> float:
-        """Signed angle difference, result in [-180, 180]."""
-        diff = (a - b + 180) % 360 - 180
-        return diff

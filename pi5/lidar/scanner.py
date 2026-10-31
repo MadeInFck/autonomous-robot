@@ -1,11 +1,10 @@
-"""Wrapper around the rplidarc1 SDK to accumulate complete scans."""
+"""Wrapper around the rplidarc1 SDK to assemble complete scans."""
 
 import asyncio
 import logging
 import time
-from queue import Queue, Empty
-from threading import Thread, Lock
-from typing import Callable, Optional
+from threading import Thread
+from typing import Optional
 
 from rplidarc1 import RPLidar
 
@@ -15,41 +14,30 @@ logger = logging.getLogger(__name__)
 
 
 class LidarScanner:
-    """Encapsulates the rplidarc1 SDK and accumulates points into complete 360deg scans.
+    """Encapsulates the rplidarc1 SDK and assembles points into complete 360deg scans.
 
-    The SDK sends points one by one into an asyncio.Queue.
-    This class:
-      - Launches a dedicated asyncio thread to read the LiDAR
-      - Accumulates points and detects complete revolutions (angle wrapping around ~0deg)
-      - Exposes complete scans via a thread-safe queue or a callback
+    The SDK sends points one by one into an asyncio.Queue. A dedicated thread
+    runs the asyncio loop, folds each point into the current revolution as it
+    arrives and publishes the last complete scan. Readers only ever see whole
+    scans, they never have to pump anything, and nothing piles up when nobody
+    reads.
     """
 
-    def __init__(
-        self,
-        port: str,
-        baudrate: int = 460800,
-        min_quality: int = 0,
-        on_scan: Optional[Callable[[Scan], None]] = None,
-    ):
+    def __init__(self, port: str, baudrate: int = 460800, min_quality: int = 0):
         self.port = port
         self.baudrate = baudrate
         self.min_quality = min_quality
-        self.on_scan = on_scan
 
         self._lidar: Optional[RPLidar] = None
-        self._scan_queue: Queue[Scan] = Queue()
-        self._py_queue: Queue[dict] = Queue()
         self._thread: Optional[Thread] = None
         self._running = False
 
-        # Current scan accumulation — guarded by _accum_lock because
-        # process_incoming() is called from both the main loop and the
-        # pilot control thread.
-        self._accum_lock = Lock()
+        # Revolution being assembled — touched by the asyncio thread only
         self._current_points: list[ScanPoint] = []
         self._last_angle: float = -1.0
 
-        # Last complete scan (for the web API)
+        # Last complete scan. Replaced wholesale (never mutated), so readers
+        # in other threads need no lock.
         self._last_scan: Optional[Scan] = None
 
     def start(self):
@@ -80,56 +68,23 @@ class LidarScanner:
                 logger.warning(f"Erreur lors de l'arret du LiDAR: {e}")
         logger.info("LiDAR arrete.")
 
-    def get_scan(self, timeout: float = 1.0) -> Optional[Scan]:
-        """Retrieves the next complete scan (blocking with timeout)."""
-        try:
-            return self._scan_queue.get(timeout=timeout)
-        except Empty:
-            return None
-
     def get_last_scan(self) -> Optional[Scan]:
         """Returns the last complete scan (non-blocking, thread-safe)."""
         return self._last_scan
 
-    def process_incoming(self):
-        """Processes points received from the asyncio thread and accumulates them into scans.
-
-        Thread-safe: may be called from the main loop and the pilot thread.
-        """
-        with self._accum_lock:
-            while True:
-                try:
-                    point_dict = self._py_queue.get_nowait()
-                except Empty:
-                    break
-                self._accumulate_point(point_dict)
-
     def _accumulate_point(self, point_dict: dict):
-        """Adds a point to the current scan. Detects new revolutions."""
+        """Adds a point to the current revolution, publishing it when it wraps."""
         point = ScanPoint.from_sdk_dict(point_dict)
-        if point is None:
-            return
-
         current_angle = point.angle_deg
 
-        # New revolution detection: angle decreases by more than 180deg
+        # New revolution: the angle wraps from the end of the turn to its start
         if (
-            self._last_angle >= 0
-            and self._last_angle > 270
+            self._last_angle > 270
             and current_angle < 90
             and len(self._current_points) > 10
         ):
-            scan = Scan(points=list(self._current_points), timestamp=time.time())
-            self._last_scan = scan
-            self._scan_queue.put(scan)
-            if self.on_scan:
-                self.on_scan(scan)
-            logger.debug(
-                f"Scan complet: {scan.num_points} points, "
-                f"{scan.num_valid} valides, "
-                f"qualite moyenne: {scan.mean_quality:.1f}"
-            )
-            self._current_points.clear()
+            self._last_scan = Scan(points=self._current_points, timestamp=time.time())
+            self._current_points = []
 
         self._last_angle = current_angle
 
@@ -153,12 +108,12 @@ class LidarScanner:
         task_forward.cancel()
 
     async def _forward_points(self):
-        """Transfers points from the asyncio.Queue to the thread-safe queue."""
+        """Folds the points coming out of the SDK queue into revolutions."""
         while not self._lidar.stop_event.is_set():
             try:
                 data = await asyncio.wait_for(
                     self._lidar.output_queue.get(), timeout=0.5
                 )
-                self._py_queue.put(data)
             except asyncio.TimeoutError:
                 continue
+            self._accumulate_point(data)
