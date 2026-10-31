@@ -334,14 +334,12 @@ class TestRecordExhaustionAttack:
     def test_concurrent_record_refused(self, fast_sleep):
         entered, gate = threading.Semaphore(0), threading.Event()
         counter = itertools.count()
-        fix = types.SimpleNamespace(has_fix=True, latitude=48.8566,
-                                    longitude=2.3522)
-
         def get_last_data():
             if next(counter) == 0:      # first sampler: hold the critical section
                 entered.release()
                 gate.wait(5)
-            return fix
+            return types.SimpleNamespace(has_fix=True, latitude=48.8566,
+                                         longitude=2.3522, timestamp=time.time())
 
         sensors = MagicMock()
         sensors.get_last_data.side_effect = get_last_data
@@ -371,7 +369,7 @@ class TestRecordExhaustionAttack:
 
     def test_rejected_while_patrolling(self):
         pilot = MagicMock()
-        pilot.get_status.return_value = {'state': 'NAVIGATING'}
+        pilot.is_active.return_value = True
         server = WebServer(pilot=pilot, patrol_manager=MagicMock(),
                            sensor_receiver=MagicMock())
         client = server.app.test_client()
@@ -396,7 +394,7 @@ class TestPilotHeartbeatWatchdog:
     def test_dead_control_thread_stops_motors(self):
         motors = MagicMock()
         pilot = MagicMock()
-        pilot.get_status.return_value = {'state': 'NAVIGATING'}
+        pilot.is_active.return_value = True
         pilot.control_heartbeat_age.return_value = 99.0
         server = WebServer(motor_controller=motors, pilot=pilot)
         self._run_watchdog(server)
@@ -406,7 +404,7 @@ class TestPilotHeartbeatWatchdog:
     def test_healthy_pilot_is_left_alone(self):
         motors = MagicMock()
         pilot = MagicMock()
-        pilot.get_status.return_value = {'state': 'NAVIGATING'}
+        pilot.is_active.return_value = True
         pilot.control_heartbeat_age.return_value = 0.2
         server = WebServer(motor_controller=motors, pilot=pilot)
         self._run_watchdog(server)
@@ -426,6 +424,44 @@ class TestPilotHeartbeatWatchdog:
         server._last_move_time = time.time() - 10
         self._run_watchdog(server)
         assert motors.stop.called
+
+
+class TestRecordFreshness:
+    """A frozen UART link (Pico dead) must not be recorded as a waypoint."""
+
+    def test_stale_frames_rejected(self, monkeypatch):
+        shim = types.SimpleNamespace(time=time.time, sleep=lambda s: None)
+        monkeypatch.setattr(web_server_module, 'time', shim)
+        sensors = MagicMock()
+        sensors.get_last_data.return_value = types.SimpleNamespace(
+            has_fix=True, latitude=48.8566, longitude=2.3522,
+            timestamp=time.time() - 30)
+        patrol = MagicMock()
+        server = WebServer(patrol_manager=patrol, sensor_receiver=sensors)
+        r = server.app.test_client().post('/api/waypoints/record', headers=CSRF)
+        assert r.status_code == 400
+        patrol.record_waypoint.assert_not_called()
+
+
+class TestManualControlVsPilot:
+    def _server(self, active):
+        motors = MagicMock()
+        motors.get_status.return_value = {}
+        pilot = MagicMock()
+        pilot.is_active.return_value = active
+        return WebServer(motor_controller=motors, pilot=pilot), motors
+
+    def test_joystick_ignored_while_patrolling(self):
+        server, motors = self._server(active=True)
+        r = server.app.test_client().post('/api/move', json={'vy': 1}, headers=CSRF)
+        assert r.status_code == 200
+        motors.move.assert_not_called()
+
+    def test_joystick_works_once_patrol_finished(self):
+        """PATROL_COMPLETE (thread ended) used to keep the joystick locked."""
+        server, motors = self._server(active=False)
+        server.app.test_client().post('/api/move', json={'vy': 1}, headers=CSRF)
+        motors.move.assert_called_once()
 
 
 class TestLoadWebConfig:

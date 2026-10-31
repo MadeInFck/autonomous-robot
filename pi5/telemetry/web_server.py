@@ -36,6 +36,17 @@ _MAX_STREAM_CLIENTS = 3
 # The pilot feeds a heartbeat each cycle (~5 Hz); this is the staleness budget.
 _PILOT_HEARTBEAT_TIMEOUT_S = 3.0
 
+# Manual mode: motors stop when no /api/move arrives for this long (the UI
+# re-sends the joystick state every 200 ms).
+_MOVE_WATCHDOG_S = 0.5
+
+# Waypoint recording: average this many GPS readings, one per second (the GPS
+# update rate), ignoring UART frames older than _GPS_FRESH_S (frozen Pico).
+_RECORD_SAMPLES = 10
+_RECORD_INTERVAL_S = 1.0
+_RECORD_MIN_FIXES = 3
+_GPS_FRESH_S = 2.0
+
 # Production WSGI server: single process (the app shares live objects with the
 # motor/UART threads), multi-threaded, TLS via ssl_adapter. Falls back to the
 # werkzeug dev server if not installed.
@@ -59,8 +70,6 @@ def get_local_ip():
         return ip
     except Exception:
         return 'localhost'
-
-
 
 
 class WebServer:
@@ -87,7 +96,6 @@ class WebServer:
         self._thread = None
         self._running = False
         self._last_move_time = 0.0
-        self._watchdog_interval = 0.5  # seconds: stop motors if no command received
         self._auth_username = auth_username
         self._auth_password_hash = auth_password_hash
         # sha256("user:password") of the last successfully verified credentials.
@@ -176,6 +184,31 @@ class WebServer:
         except (TypeError, ValueError):
             return False
 
+    def _pilot_active(self) -> bool:
+        """True while the autonomous pilot owns the motors."""
+        return bool(self.pilot and self.pilot.is_active())
+
+    def _stop_everything(self):
+        if self.pilot:
+            self.pilot.stop()
+        if self.motor_controller:
+            self.motor_controller.stop()
+
+    def _save_waypoints(self):
+        try:
+            self.patrol_manager.save(self._patrol_file)
+        except Exception as e:
+            logger.error(f"Erreur sauvegarde waypoints: {e}")
+
+    @staticmethod
+    def _schedule_power(command: list, message: str):
+        """Runs a power command (sudoers rule robot-power) once the reply is sent."""
+        def _run():
+            time.sleep(1)
+            subprocess.run(['sudo', *command])
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({'status': 'ok', 'message': message})
+
     def _register_routes(self):
 
         # CSRF protection + auth on all requests (before_request hook)
@@ -235,11 +268,7 @@ class WebServer:
                 self._last_move_time = time.time()
 
                 motors = None
-                pilot_active = (
-                    self.pilot and
-                    self.pilot.get_status().get('state') not in ('IDLE',)
-                )
-                if self.motor_controller and not pilot_active:
+                if self.motor_controller and not self._pilot_active():
                     self.motor_controller.move(vx, vy, omega, speed)
                     motors = self.motor_controller.get_status()
 
@@ -319,10 +348,7 @@ class WebServer:
 
         @self.app.route('/api/stop', methods=['POST'])
         def api_stop():
-            if self.pilot:
-                self.pilot.stop()
-            if self.motor_controller:
-                self.motor_controller.stop()
+            self._stop_everything()
             return jsonify({'status': 'ok'})
 
         # --- Lidar routes ---
@@ -368,7 +394,7 @@ class WebServer:
                 return jsonify({'status': 'error', 'message': 'Non disponible'}), 400
             # Recording while the robot moves would average positions along
             # the path into a meaningless midpoint.
-            if self.pilot and self.pilot.get_status().get('state') != 'IDLE':
+            if self._pilot_active():
                 return jsonify({'status': 'error',
                                 'message': 'Arretez la patrouille avant d\'enregistrer'}), 409
 
@@ -379,29 +405,21 @@ class WebServer:
                 return jsonify({'status': 'error',
                                 'message': 'Enregistrement deja en cours'}), 409
             try:
-                # Average N GPS readings to reduce position error
-                GPS_SAMPLES = 10
-                GPS_INTERVAL = 1.0  # 1 Hz — real GPS update rate
+                # Average several GPS readings to reduce position error
                 lats, lons = [], []
-                for _ in range(GPS_SAMPLES):
+                for _ in range(_RECORD_SAMPLES):
                     d = self.sensor_receiver.get_last_data()
-                    if d and d.has_fix:
+                    if d and d.has_fix and time.time() - d.timestamp < _GPS_FRESH_S:
                         lats.append(d.latitude)
                         lons.append(d.longitude)
-                    time.sleep(GPS_INTERVAL)
+                    time.sleep(_RECORD_INTERVAL_S)
 
-                if len(lats) < 3:
+                if len(lats) < _RECORD_MIN_FIXES:
                     return jsonify({'status': 'error', 'message': 'Pas assez de fix GPS'}), 400
 
-                avg_lat = sum(lats) / len(lats)
-                avg_lon = sum(lons) / len(lons)
-
-                idx = self.patrol_manager.record_waypoint(avg_lat, avg_lon)
-                # Auto-save waypoints
-                try:
-                    self.patrol_manager.save(self._patrol_file)
-                except Exception as e:
-                    logger.error(f"Erreur sauvegarde waypoints: {e}")
+                idx = self.patrol_manager.record_waypoint(sum(lats) / len(lats),
+                                                          sum(lons) / len(lons))
+                self._save_waypoints()
                 return jsonify({'status': 'ok', 'index': idx, 'samples': len(lats)})
             finally:
                 self._record_lock.release()
@@ -411,10 +429,7 @@ class WebServer:
             if not self.patrol_manager:
                 return jsonify({'status': 'error'}), 400
             self.patrol_manager.delete_waypoint(idx)
-            try:
-                self.patrol_manager.save(self._patrol_file)
-            except Exception as e:
-                logger.error(f"Erreur sauvegarde waypoints: {e}")
+            self._save_waypoints()
             return jsonify({'status': 'ok'})
 
         @self.app.route('/api/waypoints/last', methods=['DELETE'])
@@ -422,10 +437,7 @@ class WebServer:
             if not self.patrol_manager or self.patrol_manager.count == 0:
                 return jsonify({'status': 'error'}), 400
             self.patrol_manager.delete_waypoint(self.patrol_manager.count - 1)
-            try:
-                self.patrol_manager.save(self._patrol_file)
-            except Exception as e:
-                logger.error(f"Erreur sauvegarde waypoints: {e}")
+            self._save_waypoints()
             return jsonify({'status': 'ok'})
 
         # --- System routes ---
@@ -435,19 +447,11 @@ class WebServer:
 
         @self.app.route('/api/shutdown', methods=['POST'])
         def api_shutdown():
-            def _do_shutdown():
-                time.sleep(1)
-                subprocess.run(['sudo', 'shutdown', 'now'])
-            threading.Thread(target=_do_shutdown, daemon=True).start()
-            return jsonify({'status': 'ok', 'message': 'Extinction en cours...'})
+            return self._schedule_power(['shutdown', 'now'], 'Extinction en cours...')
 
         @self.app.route('/api/restart', methods=['POST'])
         def api_restart():
-            def _do_restart():
-                time.sleep(1)
-                subprocess.run(['sudo', 'reboot'])
-            threading.Thread(target=_do_restart, daemon=True).start()
-            return jsonify({'status': 'ok', 'message': 'Redémarrage en cours...'})
+            return self._schedule_power(['reboot'], 'Redémarrage en cours...')
 
         # --- Patrol routes ---
 
@@ -462,9 +466,7 @@ class WebServer:
         def api_patrol_stop():
             if not self.pilot:
                 return jsonify({'status': 'error'}), 400
-            self.pilot.stop()
-            if self.motor_controller:
-                self.motor_controller.stop()
+            self._stop_everything()
             return jsonify({'status': 'ok'})
 
         @self.app.route('/api/patrol/status')
@@ -474,17 +476,17 @@ class WebServer:
             return jsonify(self.pilot.get_status())
 
     def _watchdog_loop(self):
-        """Stop motors if no move command received for watchdog_interval seconds (manual mode only)."""
+        """Stops the motors when their owner goes silent.
+
+        Manual mode: no /api/move for _MOVE_WATCHDOG_S (phone asleep, WiFi
+        lost). Patrol: the pilot's control thread stopped beating.
+        """
         pilot_stalled = False
         while self._running:
             time.sleep(0.1)
             if not self.motor_controller:
                 continue
-            pilot_is_active = (
-                self.pilot and
-                self.pilot.get_status().get('state') not in ('IDLE',)
-            )
-            if pilot_is_active:
+            if self._pilot_active():
                 # The manual watchdog is intentionally bypassed here (the pilot
                 # drives the motors), so nothing else would catch a control
                 # thread that died mid-navigation: the last command would stay
@@ -504,7 +506,7 @@ class WebServer:
                         logger.error(f"Arret pilote impossible: {e}")
                 continue
             pilot_stalled = False
-            if time.time() - self._last_move_time > self._watchdog_interval:
+            if time.time() - self._last_move_time > _MOVE_WATCHDOG_S:
                 self.motor_controller.stop()
 
     def start(self, threaded=True):
@@ -541,10 +543,6 @@ class WebServer:
             serve()
 
         return url
-
-    def get_url(self):
-        scheme = "https" if self._ssl_context else "http"
-        return f"{scheme}://{get_local_ip()}:{self.port}"
 
     def stop(self):
         self._running = False

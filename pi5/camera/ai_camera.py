@@ -234,7 +234,9 @@ class AiCamera:
         self._lock = threading.Lock()
         self._history: List[Detection] = []
         self._latest_jpeg: bytes = b''
+        # Open MJPEG streams: the subprocess encodes frames only while > 0
         self._stream_clients = 0
+        self._stream_lock = threading.Lock()
         self._running = False
         self._paused = True
         self._resuming = False
@@ -288,12 +290,21 @@ class AiCamera:
 
     def stop(self):
         self._running = False
-        try:
-            self._ctrl_q.put_nowait("stop")
-        except Exception:
-            pass
+        self._send("stop")
         if self._process:
             self._process.join(timeout=3)
+            if self._process.is_alive():
+                # Stuck in a picamera2 call or on a full result queue
+                self._process.terminate()
+                self._process.join(timeout=1)
+
+    def _send(self, cmd: str) -> bool:
+        """Posts a command to the subprocess; False if the control queue is full."""
+        try:
+            self._ctrl_q.put_nowait(cmd)
+            return True
+        except Exception:
+            return False
 
     def pause(self):
         """Pause the camera pipeline (stops picam2 inside the subprocess)."""
@@ -301,18 +312,13 @@ class AiCamera:
         with self._lock:
             self._latest_jpeg = b''
             self._history = []
-        try:
-            self._ctrl_q.put_nowait("pause")
-        except Exception:
-            pass
+        self._send("pause")
 
     def resume(self):
         """Resume the camera pipeline. is_starting() is True until first inference."""
         self._resuming = True
         self._paused = False
-        try:
-            self._ctrl_q.put_nowait("resume")
-        except Exception:
+        if not self._send("resume"):
             self._resuming = False
 
     def is_paused(self) -> bool:
@@ -378,40 +384,43 @@ class AiCamera:
                     'confidence': d.confidence,
                     'timestamp': d.timestamp,
                     'age_s': round(now - d.timestamp, 1),
-                    'is_alert': d.is_alert,
+                    'is_alert': d.is_alert,                 # first sighting: toast
+                    'alert_class': d.label in ALERT_LABELS,  # person/animal: highlight
                 }
                 for d in self._history
                 if now - d.timestamp <= max_age_s
             ]
 
-    def get_latest_jpeg(self) -> bytes:
-        """Return the most recent JPEG-encoded camera frame (bytes)."""
-        with self._lock:
-            return self._latest_jpeg
-
     def generate_stream(self):
-        """MJPEG generator for Flask streaming response."""
-        self._stream_clients += 1
+        """MJPEG generator for Flask streaming response.
+
+        Streaming is reference-counted: the subprocess captures and encodes
+        frames from the first viewer on, and stops only when the last one
+        leaves (the first viewer leaving must not freeze the others). Each
+        frame is sent once — the camera produces 15 fps at most, re-sending
+        an unchanged JPEG would only burn WiFi bandwidth.
+        """
+        with self._stream_lock:
+            self._stream_clients += 1
+            if self._stream_clients == 1:
+                self._send("stream_on")
         try:
-            self._ctrl_q.put_nowait("stream_on")
-        except Exception:
-            pass
-        try:
+            last_sent = None
             while True:
                 with self._lock:
                     frame = self._latest_jpeg
-                if frame:
+                if frame and frame is not last_sent:
+                    last_sent = frame
                     yield (
                         b'--frame\r\n'
                         b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
                     )
-                time.sleep(0.05)
+                time.sleep(0.03)
         finally:
-            self._stream_clients -= 1
-            try:
-                self._ctrl_q.put_nowait("stream_off")
-            except Exception:
-                pass
+            with self._stream_lock:
+                self._stream_clients -= 1
+                if self._stream_clients == 0:
+                    self._send("stream_off")
 
     def has_error(self) -> bool:
         return self._error

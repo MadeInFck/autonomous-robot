@@ -279,6 +279,26 @@
             opts.headers = Object.assign({'X-Robot-Api': '1'}, opts.headers || {});
             return fetch(url, opts);
         }
+        const $ = (id) => document.getElementById(id);
+        // Polls a GET endpoint and hands its JSON to onData. Skips a tick while
+        // the previous request is still pending (slow WiFi must not pile up
+        // requests on the robot's thread pool), while the page is hidden, or
+        // while when() says there is nothing to fetch.
+        function poll(url, periodMs, onData, {onError, when} = {}) {
+            let busy = false;
+            setInterval(async () => {
+                if (busy || document.hidden || (when && !when())) return;
+                busy = true;
+                try {
+                    const res = await apiFetch(url);
+                    if (res.ok) onData(await res.json());
+                } catch (e) {
+                    if (onError) onError(e);
+                } finally {
+                    busy = false;
+                }
+            }, periodMs);
+        }
         function showToast(msg, type='error', duration=2500) {
             const t = document.getElementById('toast');
             t.textContent = msg;
@@ -312,18 +332,20 @@
             function resetStick(stick, isRotation) {
                 active = false;
                 stick.classList.remove('active');
-                stick.style.left = '42.5px'; stick.style.top = '42.5px';
+                centerStick(stick);
                 if (isRotation) rotation = 0; else { moveX = 0; moveY = 0; }
                 updateTelemetry(); sendCommand();
             }
         }
+        // Back to the CSS rest position (centred for both stick sizes)
+        function centerStick(stick) { stick.style.left = ''; stick.style.top = ''; }
         function updateStick(e, container, stick, isRotation) {
             const rect = container.getBoundingClientRect();
-            const cx = rect.width/2, cy = rect.height/2;
+            const cx = rect.width/2, cy = rect.height/2, half = stick.offsetWidth/2;
             let x = e.clientX - rect.left - cx, y = e.clientY - rect.top - cy;
-            const dist = Math.sqrt(x*x+y*y), maxDist = rect.width/2 - 27;
+            const dist = Math.sqrt(x*x+y*y), maxDist = cx - half;
             if (dist > maxDist) { x = x/dist*maxDist; y = y/dist*maxDist; }
-            stick.style.left = (cx+x-27.5)+'px'; stick.style.top = (cy+y-27.5)+'px';
+            stick.style.left = (cx+x-half)+'px'; stick.style.top = (cy+y-half)+'px';
             if (isRotation) rotation = x/maxDist;
             else { moveX = x/maxDist; moveY = -y/maxDist; }
             updateTelemetry(); sendCommand();
@@ -376,8 +398,7 @@
                 if (c) {
                     // Reconnected: flush joystick state and send stop immediately
                     moveX = 0; moveY = 0; rotation = 0;
-                    const sticks = [moveStick, rotateStick];
-                    sticks.forEach(s => { s.style.left = '42.5px'; s.style.top = '42.5px'; });
+                    [moveStick, rotateStick].forEach(centerStick);
                     apiFetch('/api/stop', { method: 'POST' });
                     showToast("Connexion rétablie", 'success', 4000);
                 } else {
@@ -387,84 +408,81 @@
             _wasConnected = c;
         }
 
-        /* ===== UART status polling ===== */
-        setInterval(async () => {
-            try {
-                const res = await apiFetch('/api/status');
-                if (!res.ok) return;
-                const d = await res.json();
-                const ok = d.uart_ok === true;
-                document.getElementById('uartDot').classList.toggle('connected', ok);
-                document.getElementById('uartText').textContent = ok ? 'Pico OK' : 'Pico --';
-            } catch(e) {}
-        }, 2000);
+        /* ===== Status polling (UART link, lidar presence) ===== */
+        let _lidarConnected = true;  // until /api/status says otherwise
+        poll('/api/status', 2000, (d) => {
+            const ok = d.uart_ok === true;
+            $('uartDot').classList.toggle('connected', ok);
+            $('uartText').textContent = ok ? 'Pico OK' : 'Pico --';
+            if (_lidarConnected && d.lidar_connected !== true) {
+                drawLidar([]);
+                $('lidarInfo').textContent = 'LiDAR absent';
+            }
+            _lidarConnected = d.lidar_connected === true;
+        });
         function headingToCardinal(deg) {
             const dirs = ['N','NE','E','SE','S','SO','O','NO'];
             return dirs[Math.round(deg/45) % 8];
         }
 
         /* ===== Sensor polling ===== */
-        setInterval(async () => {
-            try {
-                const res = await apiFetch('/api/sensors');
-                if (!res.ok) return;
-                const d = await res.json();
-                document.getElementById('accX').textContent = (d.acc_x !== undefined) ? d.acc_x.toFixed(2) : '--';
-                document.getElementById('accY').textContent = (d.acc_y !== undefined) ? d.acc_y.toFixed(2) : '--';
-                document.getElementById('accZ').textContent = (d.acc_z !== undefined) ? d.acc_z.toFixed(2) : '--';
-                if (d.imu_type === 'BNO085' && d.pitch !== undefined && d.roll !== undefined) {
-                    // BNO085: pitch/roll from sensor fusion (accurate at rest too)
-                    document.getElementById('pitch').textContent = d.pitch.toFixed(1) + 'deg';
-                    document.getElementById('roll').textContent = d.roll.toFixed(1) + 'deg';
-                } else if (d.acc_x !== undefined && d.acc_y !== undefined && d.acc_z !== undefined) {
-                    // BMI160: derive pitch/roll from accelerometer
-                    const pitch = Math.atan2(d.acc_y, Math.sqrt(d.acc_x*d.acc_x + d.acc_z*d.acc_z)) * 180 / Math.PI;
-                    const roll = Math.atan2(-d.acc_x, d.acc_z) * 180 / Math.PI;
-                    document.getElementById('pitch').textContent = pitch.toFixed(1) + 'deg';
-                    document.getElementById('roll').textContent = roll.toFixed(1) + 'deg';
-                }
-                const isBno = d.imu_type === 'BNO085';
-                document.getElementById('gyrValues').style.display = isBno ? 'none' : '';
-                document.getElementById('bnoCalValues').style.display = isBno ? '' : 'none';
-                document.getElementById('imuCalSpan').style.display = isBno ? '' : 'none';
-                if (isBno) {
-                    document.getElementById('gyrLabel').textContent = 'BNO085';
-                    const acc = d.heading_accuracy_deg !== undefined ? d.heading_accuracy_deg : 180;
-                    const cal = d.imu_calibrated === true;
-                    document.getElementById('bnoAccuracy').textContent = acc.toFixed(1) + 'deg';
-                    document.getElementById('bnoCalStatus').textContent = cal ? '✓ Calibré' : 'Calibration...';
-                    document.getElementById('bnoCalStatus').style.color = cal ? '#4f8' : '#fa0';
-                    document.getElementById('imuCalDot').classList.toggle('connected', cal);
-                    document.getElementById('imuCalText').textContent = cal ? 'CAL' : acc.toFixed(0) + 'deg';
-                } else {
-                    document.getElementById('gyrLabel').textContent = 'Gyro (deg/s)';
-                    document.getElementById('gyrX').textContent = (d.gyr_x !== undefined) ? d.gyr_x.toFixed(1) : '--';
-                    document.getElementById('gyrY').textContent = (d.gyr_y !== undefined) ? d.gyr_y.toFixed(1) : '--';
-                    document.getElementById('gyrZ').textContent = (d.gyr_z !== undefined) ? d.gyr_z.toFixed(1) : '--';
-                }
-                const hasFix = d.has_fix === true || (d.latitude !== undefined && (d.latitude !== 0 || d.longitude !== 0));
-                document.getElementById('gpsDot').classList.toggle('connected', hasFix);
-                document.getElementById('gpsFixStatus').textContent = hasFix ? 'FIX' : 'NO FIX';
-                document.getElementById('gpsSats').textContent = (d.satellites !== undefined) ? d.satellites : '0';
-                document.getElementById('gpsLat').textContent = (d.latitude !== undefined) ? d.latitude.toFixed(6) : '--';
-                document.getElementById('gpsLon').textContent = (d.longitude !== undefined) ? d.longitude.toFixed(6) : '--';
-                const speedKmh = (d.speed_kmh !== undefined && d.speed_kmh > 0.5) ? d.speed_kmh : 0;
-                document.getElementById('gpsSpeed').textContent = speedKmh.toFixed(1);
-                document.getElementById('gpsHeading').textContent = (d.heading !== undefined) ? d.heading.toFixed(0) + 'deg' : '--';
-                document.getElementById('gpsCardinal').textContent = (d.heading !== undefined) ? headingToCardinal(d.heading) : '';
-                if (hasFix) {
-                    _mapRawPos = { lat: d.latitude, lon: d.longitude };
-                    _rawPosBuffer.push({ lat: d.latitude, lon: d.longitude });
-                    if (_rawPosBuffer.length > 3) _rawPosBuffer.shift();
-                    const avgLat = _rawPosBuffer.reduce((s,p) => s + p.lat, 0) / _rawPosBuffer.length;
-                    const avgLon = _rawPosBuffer.reduce((s,p) => s + p.lon, 0) / _rawPosBuffer.length;
-                    _mapCurrentPos = { lat: avgLat, lon: avgLon, heading: d.heading || 0 };
-                } else {
-                    _mapRawPos = null; _mapCurrentPos = null; _rawPosBuffer = [];
-                }
-                drawMap();
-            } catch(e) {}
-        }, 1000);
+        const fmt = (v, digits) => (v !== undefined) ? v.toFixed(digits) : '--';
+        poll('/api/sensors', 1000, (d) => {
+            const isBno = d.imu_type === 'BNO085';
+            $('accX').textContent = fmt(d.acc_x, 2);
+            $('accY').textContent = fmt(d.acc_y, 2);
+            $('accZ').textContent = fmt(d.acc_z, 2);
+            if (isBno && d.pitch !== undefined && d.roll !== undefined) {
+                // BNO085: pitch/roll from sensor fusion (accurate at rest too)
+                $('pitch').textContent = d.pitch.toFixed(1) + 'deg';
+                $('roll').textContent = d.roll.toFixed(1) + 'deg';
+            } else if (d.acc_x !== undefined && d.acc_y !== undefined && d.acc_z !== undefined) {
+                // BMI160: derive pitch/roll from accelerometer
+                const pitch = Math.atan2(d.acc_y, Math.sqrt(d.acc_x*d.acc_x + d.acc_z*d.acc_z)) * 180 / Math.PI;
+                const roll = Math.atan2(-d.acc_x, d.acc_z) * 180 / Math.PI;
+                $('pitch').textContent = pitch.toFixed(1) + 'deg';
+                $('roll').textContent = roll.toFixed(1) + 'deg';
+            }
+            $('gyrValues').style.display = isBno ? 'none' : '';
+            $('bnoCalValues').style.display = isBno ? '' : 'none';
+            $('imuCalSpan').style.display = isBno ? '' : 'none';
+            if (isBno) {
+                $('gyrLabel').textContent = 'BNO085';
+                const acc = d.heading_accuracy_deg !== undefined ? d.heading_accuracy_deg : 180;
+                const cal = d.imu_calibrated === true;
+                $('bnoAccuracy').textContent = acc.toFixed(1) + 'deg';
+                $('bnoCalStatus').textContent = cal ? '✓ Calibré' : 'Calibration...';
+                $('bnoCalStatus').style.color = cal ? '#4f8' : '#fa0';
+                $('imuCalDot').classList.toggle('connected', cal);
+                $('imuCalText').textContent = cal ? 'CAL' : acc.toFixed(0) + 'deg';
+            } else {
+                $('gyrLabel').textContent = 'Gyro (deg/s)';
+                $('gyrX').textContent = fmt(d.gyr_x, 1);
+                $('gyrY').textContent = fmt(d.gyr_y, 1);
+                $('gyrZ').textContent = fmt(d.gyr_z, 1);
+            }
+            const hasFix = d.has_fix === true || (d.latitude !== undefined && (d.latitude !== 0 || d.longitude !== 0));
+            $('gpsDot').classList.toggle('connected', hasFix);
+            $('gpsFixStatus').textContent = hasFix ? 'FIX' : 'NO FIX';
+            $('gpsSats').textContent = (d.satellites !== undefined) ? d.satellites : '0';
+            $('gpsLat').textContent = fmt(d.latitude, 6);
+            $('gpsLon').textContent = fmt(d.longitude, 6);
+            const speedKmh = (d.speed_kmh !== undefined && d.speed_kmh > 0.5) ? d.speed_kmh : 0;
+            $('gpsSpeed').textContent = speedKmh.toFixed(1);
+            $('gpsHeading').textContent = (d.heading !== undefined) ? d.heading.toFixed(0) + 'deg' : '--';
+            $('gpsCardinal').textContent = (d.heading !== undefined) ? headingToCardinal(d.heading) : '';
+            if (hasFix) {
+                _mapRawPos = { lat: d.latitude, lon: d.longitude };
+                _rawPosBuffer.push({ lat: d.latitude, lon: d.longitude });
+                if (_rawPosBuffer.length > 3) _rawPosBuffer.shift();
+                const avgLat = _rawPosBuffer.reduce((s,p) => s + p.lat, 0) / _rawPosBuffer.length;
+                const avgLon = _rawPosBuffer.reduce((s,p) => s + p.lon, 0) / _rawPosBuffer.length;
+                _mapCurrentPos = { lat: avgLat, lon: avgLon, heading: d.heading || 0 };
+            } else {
+                _mapRawPos = null; _mapCurrentPos = null; _rawPosBuffer = [];
+            }
+            drawMap();
+        });
 
         /* ===== Lidar canvas ===== */
         const lidarCanvas = document.getElementById('lidarCanvas');
@@ -514,18 +532,12 @@
             }
         }
 
-        setInterval(async () => {
-            try {
-                const res = await apiFetch('/api/lidar');
-                if (!res.ok) return;
-                const data = await res.json();
-                drawLidar(data.points || []);
-                document.getElementById('lidarInfo').textContent =
-                    `${data.num_points || 0} pts | nearest: ${data.nearest_mm ? (data.nearest_mm/1000).toFixed(1)+'m' : '--'}`;
-            } catch(e) {
-                drawLidar([]);
-            }
-        }, 200);
+        // 5 Hz, only while a lidar is present
+        poll('/api/lidar', 200, (data) => {
+            drawLidar(data.points || []);
+            $('lidarInfo').textContent =
+                `${data.num_points || 0} pts | nearest: ${data.nearest_mm ? (data.nearest_mm/1000).toFixed(1)+'m' : '--'}`;
+        }, {onError: () => drawLidar([]), when: () => _lidarConnected});
 
         drawLidar([]); // Initial empty
 
@@ -805,46 +817,39 @@
         }
 
         // Patrol status polling
-        setInterval(async () => {
-            try {
-                const res = await apiFetch('/api/patrol/status');
-                if (!res.ok) return;
-                const s = await res.json();
-                const badge = document.getElementById('modeBadge');
-                const statusEl = document.getElementById('patrolStatus');
+        const PATROL_BADGES = {
+            IDLE:            ['MANUEL', 'manual'],
+            NAVIGATING:      ['PATROUILLE', 'patrol'],
+            AVOIDING:        ['EVITEMENT', 'avoiding'],
+            PATROL_COMPLETE: ['TERMINE', 'manual'],
+        };
+        poll('/api/patrol/status', 1000, (s) => {
+            const [label, cls] = PATROL_BADGES[s.state] || [s.state, 'manual'];
+            $('modeBadge').textContent = label;
+            $('modeBadge').className = 'mode-badge ' + cls;
 
-                // Debug nav line: always built when dbg values present
-                const hasDbg = s.dbg_bearing !== undefined;
-                const dbgLine = hasDbg
-                    ? `hdg ${s.dbg_avg_heading}\u00b0 \u2192 cap ${s.dbg_bearing}\u00b0 err ${s.dbg_heading_error}\u00b0 \u03c9${s.dbg_omega} v${s.dbg_speed}m/s`
-                    : '';
-
-                if (s.state === 'IDLE') {
-                    badge.textContent = 'MANUEL';
-                    badge.className = 'mode-badge manual';
-                    statusEl.textContent = 'Inactif';
-                } else if (s.state === 'NAVIGATING') {
-                    badge.textContent = 'PATROUILLE';
-                    badge.className = 'mode-badge patrol';
-                    const line1 = `WP ${s.waypoint_index+1}/${s.waypoint_count} | dist: ${s.distance_m ? s.distance_m+'m' : '--'}`;
-                    statusEl.textContent = dbgLine ? `${line1}\n${dbgLine}` : line1;
-                } else if (s.state === 'AVOIDING') {
-                    badge.textContent = 'EVITEMENT';
-                    badge.className = 'mode-badge avoiding';
-                    statusEl.textContent = `Évitement obstacle - WP ${s.waypoint_index+1}/${s.waypoint_count}`;
-                } else if (s.state === 'PATROL_COMPLETE') {
-                    badge.textContent = 'TERMINE';
-                    badge.className = 'mode-badge manual';
-                    statusEl.textContent = 'Patrouille terminée';
-                } else {
-                    badge.textContent = s.state;
-                    badge.className = 'mode-badge manual';
+            const wp = `WP ${s.waypoint_index+1}/${s.waypoint_count}`;
+            let text;
+            if (s.state === 'IDLE') {
+                text = 'Inactif';
+            } else if (s.state === 'NAVIGATING') {
+                text = `${wp} | dist: ${s.distance_m !== undefined ? s.distance_m+'m' : '--'}`;
+                if (s.dbg_bearing !== undefined) {
+                    text += `\nhdg ${s.dbg_avg_heading}\u00b0 \u2192 cap ${s.dbg_bearing}\u00b0 err ${s.dbg_heading_error}\u00b0 \u03c9${s.dbg_omega} v${s.dbg_speed}m/s`;
                 }
-                if (s.gps_stale && s.state !== 'IDLE') {
-                    statusEl.textContent = '⚠ UART/GPS périmés — arrêt failsafe\n' + statusEl.textContent;
-                }
-            } catch(e) {}
-        }, 1000);
+            } else if (s.state === 'AVOIDING') {
+                text = `Évitement obstacle - ${wp}`;
+            } else if (s.state === 'PATROL_COMPLETE') {
+                text = 'Patrouille terminée';
+            } else {
+                text = '';
+            }
+            if (s.state !== 'IDLE') {
+                if (s.lidar_stale) text = '⚠ LiDAR muet — arrêt failsafe\n' + text;
+                if (s.gps_stale) text = '⚠ UART/GPS périmés — arrêt failsafe\n' + text;
+            }
+            $('patrolStatus').textContent = text;
+        });
 
         // Shutdown button
         document.getElementById('shutdownBtn').addEventListener('click', () => {
@@ -863,7 +868,6 @@
         });
 
         /* ===== Camera AI detections polling ===== */
-        const _alertLabels = new Set(['person','cat','dog','horse','sheep','cow','bear','zebra','giraffe']);
         let _lastDetectionTs = 0;
         let _toggleInFlight = false;
 
@@ -901,66 +905,52 @@
 
         document.getElementById('camToggleBtn').addEventListener('click', toggleCamera);
 
-        setInterval(async () => {
-            try {
-                const res = await apiFetch('/api/detections');
-                if (!res.ok) return;
-                const data = await res.json();
+        poll('/api/detections', 2000, (data) => {
+            const dot = $('cameraDot');
+            dot.classList.toggle('connected', data.camera_ok && !data.paused && !data.starting);
+            dot.classList.toggle('starting', !!data.starting);
+            _updateToggleBtn(data.paused, data.starting);
+            document.querySelector('.stream-btn').disabled = data.paused || data.starting;
 
-                const dot = document.getElementById('cameraDot');
-                dot.classList.toggle('connected', data.camera_ok && !data.paused && !data.starting);
-                dot.classList.toggle('starting', !!data.starting);
-                _updateToggleBtn(data.paused, data.starting);
-                document.querySelector('.stream-btn').disabled = data.paused || data.starting;
+            const section = $('detectionSection');
+            const list = $('detectionList');
+            const dets = data.detections || [];
 
-                const dets = data.detections || [];
+            if (data.paused || data.starting) {
+                section.classList.remove('active-alert');
+                list.textContent = data.paused ? 'Caméra en pause' : 'Chargement du modèle IA…';
+                $('cameraStatus').textContent = data.paused ? 'En pause' : 'Démarrage (10-30 s)';
+                return;
+            }
 
-                if (data.paused) {
-                    document.getElementById('detectionSection').classList.remove('active-alert');
-                    document.getElementById('detectionList').textContent = 'Caméra en pause';
-                    document.getElementById('cameraStatus').textContent = 'En pause';
-                    return;
-                }
+            // Toast for new alerts since last poll
+            const newAlerts = dets.filter(d => d.is_alert && d.timestamp > _lastDetectionTs);
+            if (newAlerts.length > 0) {
+                const labels = [...new Set(newAlerts.map(d => d.label))];
+                showToast('Détection : ' + labels.join(', '), 'error', 4000);
+            }
+            if (dets.length > 0) {
+                _lastDetectionTs = Math.max(...dets.map(d => d.timestamp));
+            }
 
-                if (data.starting) {
-                    document.getElementById('detectionSection').classList.remove('active-alert');
-                    document.getElementById('detectionList').textContent = 'Chargement du modèle IA…';
-                    document.getElementById('cameraStatus').textContent = 'Démarrage (10-30 s)';
-                    return;
-                }
+            // Persistent red background while a person/animal was seen in the last 15s
+            section.classList.toggle('active-alert', dets.some(d => d.alert_class && d.age_s <= 15));
 
-                // Toast for new alerts since last poll
-                const newAlerts = dets.filter(d => d.is_alert && d.timestamp > _lastDetectionTs);
-                if (newAlerts.length > 0) {
-                    const labels = [...new Set(newAlerts.map(d => d.label))];
-                    showToast('Détection : ' + labels.join(', '), 'error', 4000);
-                }
-                if (dets.length > 0) {
-                    _lastDetectionTs = Math.max(...dets.map(d => d.timestamp));
-                }
-
-                // Persistent red background while a person/animal was seen in the last 15s
-                const hasRecentAlert = dets.some(d => _alertLabels.has(d.label) && d.age_s <= 15);
-                document.getElementById('detectionSection').classList.toggle('active-alert', hasRecentAlert);
-
-                const list = document.getElementById('detectionList');
-                if (dets.length === 0) {
-                    list.textContent = 'Aucune détection (60s)';
-                    document.getElementById('cameraStatus').textContent =
-                        data.camera_ok ? 'En ligne' : 'Erreur caméra';
-                    return;
-                }
-                list.innerHTML = '';
-                dets.slice(0, 10).forEach(d => {
-                    const div = document.createElement('div');
-                    div.className = 'detection-item' + (d.is_alert ? ' alert' : '');
-                    const age = d.age_s < 60 ? d.age_s + 's' : Math.round(d.age_s / 60) + 'min';
-                    div.textContent = d.label + ' ' + Math.round(d.confidence * 100) + '% — ' + age;
-                    list.appendChild(div);
-                });
-                document.getElementById('cameraStatus').textContent = dets.length + ' détection(s) (60s)';
-            } catch(e) {}
-        }, 2000);
+            if (dets.length === 0) {
+                list.textContent = 'Aucune détection (60s)';
+                $('cameraStatus').textContent = data.camera_ok ? 'En ligne' : 'Erreur caméra';
+                return;
+            }
+            list.innerHTML = '';
+            dets.slice(0, 10).forEach(d => {
+                const div = document.createElement('div');
+                div.className = 'detection-item' + (d.is_alert ? ' alert' : '');
+                const age = d.age_s < 60 ? d.age_s + 's' : Math.round(d.age_s / 60) + 'min';
+                div.textContent = d.label + ' ' + Math.round(d.confidence * 100) + '% — ' + age;
+                list.appendChild(div);
+            });
+            $('cameraStatus').textContent = dets.length + ' détection(s) (60s)';
+        });
 
         /* ===== Stream modal ===== */
         function openStream() {
