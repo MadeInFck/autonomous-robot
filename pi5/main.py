@@ -21,6 +21,7 @@ from sensors.uart_receiver import UARTReceiver
 from motors.motor_controller import MecanumController, MotorPins, MOTORS
 from telemetry.web_server import WebServer
 from navigation.patrol_manager import PatrolManager
+from log_setup import configure_logging
 
 # Hardware defaults — overridden by config/robot_config.yaml when present,
 # and (for lidar port / web port) by CLI flags on top of that. Tuning values
@@ -74,15 +75,19 @@ def _build_motor_pins(config: dict):
         return None
 
 
-def _init_component(name: str, factory):
-    """Builds one subsystem. A failure is logged and the robot runs without it."""
+def _init_component(name: str, factory, optional: bool = False):
+    """Builds one subsystem. A failure is logged and the robot runs without it.
+
+    An optional one (lidar, camera) only degrades the robot: its failure is a
+    warning. Without motors or UART the robot can't do its job: error.
+    """
     logger.info(f"[{name}] Initialisation...")
     try:
         component = factory()
         logger.info(f"[{name}] OK")
         return component
     except Exception as e:
-        logger.error(f"[{name}] Erreur: {e}")
+        logger.log(logging.WARNING if optional else logging.ERROR, f"[{name}] Erreur: {e}")
         return None
 
 
@@ -143,10 +148,11 @@ class RobotApp:
         self.lidar_scanner = _init_component(
             "LiDAR", lambda: _start_lidar(lidar_port,
                                           lidar_cfg.get('baudrate', LIDAR_BAUDRATE),
-                                          min_quality)
+                                          min_quality),
+            optional=True,
         ) if enable_lidar else None
         self.camera = _init_component(
-            "Camera", lambda: _make_camera(camera_conf)
+            "Camera", lambda: _make_camera(camera_conf), optional=True,
         ) if enable_camera else None
 
         self.patrol_manager = PatrolManager(**_pick(nav_cfg, {'waypoint_radius': 'waypoint_radius'}))
@@ -333,12 +339,8 @@ def load_web_config(secrets_path=None):
 
 
 def main():
-    # Timestamped logs: essential to diagnose a patrol after the fact
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)-7s %(name)s: %(message)s',
-        datefmt='%H:%M:%S',
-    )
+    # Timestamped, severity-coloured logs (see log_setup)
+    configure_logging()
     config = load_robot_config()
     default_lidar_port = config.get('lidar', {}).get('port', LIDAR_PORT)
     default_web_port = config.get('telemetry', {}).get('web_server_port', WEB_PORT)
