@@ -5,6 +5,7 @@ Tests pure logic without GPIO (no hardware needed)
 
 import sys
 import os
+import time
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'motors'))
@@ -14,14 +15,16 @@ import unittest.mock
 sys.modules['gpiod'] = unittest.mock.MagicMock()
 sys.modules['gpiod.line'] = unittest.mock.MagicMock()
 
-from motor_controller import MecanumController
+import motor_controller
+from motor_controller import MecanumController, MOTORS
 
 
 @pytest.fixture
 def controller():
-    """Create a controller in simulation mode (no GPIO)"""
+    """Create a controller on a mocked GPIO chip"""
     ctrl = MecanumController()
-    return ctrl
+    yield ctrl
+    ctrl.close()
 
 
 class TestMecanumKinematics:
@@ -192,3 +195,111 @@ class TestHelperMethods:
         status = controller.get_status()
         assert status['FL']['forward'] is True
         assert status['FR']['forward'] is False
+
+
+# ===== Software PWM (timing, idle cost, shutdown) =====
+
+class _PinRecorder:
+    """Stands in for the gpiod line request: timestamps every pin write."""
+
+    def __init__(self):
+        self.events = []
+
+    def set_value(self, pin, value):
+        self.events.append((time.perf_counter(), pin, value))
+
+    def release(self):
+        pass
+
+    def writes(self, pin):
+        return [(t, v) for t, p, v in self.events if p == pin]
+
+
+@pytest.fixture
+def pwm(monkeypatch):
+    recorder = _PinRecorder()
+    monkeypatch.setattr(motor_controller.gpiod, 'request_lines',
+                        lambda *args, **kwargs: recorder)
+
+    class SlowPWM(MecanumController):
+        PWM_HZ = 10  # 100 ms cycles: duty measurable despite scheduler jitter
+
+    ctrl = SlowPWM()
+    yield ctrl, recorder
+    ctrl.close()
+
+
+ACTIVE = motor_controller.Value.ACTIVE
+INACTIVE = motor_controller.Value.INACTIVE
+
+
+def _on_durations(writes):
+    """Durations of the ACTIVE pulses in a pin's write history."""
+    pulses, rose = [], None
+    for t, value in writes:
+        if value is ACTIVE:
+            rose = t
+        elif rose is not None:
+            pulses.append(t - rose)
+            rose = None
+    return pulses
+
+
+class TestSoftwarePWM:
+    def test_duty_cycle_matches_speed(self, pwm):
+        ctrl, rec = pwm
+        ctrl.forward(30)               # 30 % of a 100 ms cycle = 30 ms pulses
+        time.sleep(0.65)
+        ctrl.stop()
+        pulses = _on_durations(rec.writes(ctrl.config['FL'].ia))
+        assert len(pulses) >= 4, 'PWM never cycled'
+        mean = sum(pulses) / len(pulses)
+        assert 0.022 < mean < 0.040, f'pulse {mean * 1000:.1f} ms, expected ~30 ms'
+
+    def test_reverse_drives_ib_only(self, pwm):
+        ctrl, rec = pwm
+        ctrl.backward(50)
+        time.sleep(0.35)
+        ctrl.stop()
+        fl = ctrl.config['FL']
+        assert any(v is ACTIVE for _, v in rec.writes(fl.ib))
+        assert not any(v is ACTIVE for _, v in rec.writes(fl.ia))
+
+    def test_full_speed_stays_on_without_toggling(self, pwm):
+        ctrl, rec = pwm
+        ctrl.forward(100)
+        time.sleep(0.35)
+        writes = rec.writes(ctrl.config['FL'].ia)
+        assert [v for _, v in writes].count(ACTIVE) == 1, '100 % must not chop'
+
+    def test_stopped_wheel_never_driven(self, pwm):
+        ctrl, rec = pwm
+        ctrl.move(vx=1, vy=1, omega=0, speed=60)   # FR = RL = 0
+        time.sleep(0.35)
+        for motor in ('FR', 'RL'):
+            pins = ctrl.config[motor]
+            assert not any(v is ACTIVE for _, v in rec.writes(pins.ia) + rec.writes(pins.ib))
+
+    def test_idle_costs_no_pin_writes(self, pwm):
+        """Robot at rest: the PWM thread must block, not spin."""
+        ctrl, rec = pwm
+        ctrl.forward(50)
+        time.sleep(0.25)
+        ctrl.stop()
+        time.sleep(0.25)               # let the cycle in progress finish
+        before = len(rec.events)
+        time.sleep(0.4)
+        assert len(rec.events) == before
+
+    def test_close_leaves_every_pin_low(self, pwm):
+        ctrl, rec = pwm
+        ctrl.forward(80)
+        time.sleep(0.15)
+        ctrl.close()
+        assert not ctrl._pwm_thread.is_alive()
+        last = {}
+        for _, pin, value in rec.events:
+            last[pin] = value
+        for motor in MOTORS:
+            pins = ctrl.config[motor]
+            assert last[pins.ia] is INACTIVE and last[pins.ib] is INACTIVE
