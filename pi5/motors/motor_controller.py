@@ -59,13 +59,17 @@ class MecanumController:
     (see _pwm_loop).
     """
 
-    # 20 steps/cycle = 5% duty-cycle resolution, matching the UI's speed
-    # increment (+/- 5%).
+    # 1 % duty-cycle resolution: a wheel trim of a few percent must not be
+    # rounded away. Costs nothing: the loop only wakes on switch-off points.
     PWM_HZ = 100
-    PWM_STEPS = 20
+    PWM_STEPS = 100
 
-    def __init__(self, motor_config: dict = None):
+    def __init__(self, motor_config: dict = None, trim: dict = None):
         self.config = motor_config or DEFAULT_MOTOR_CONFIG
+        # Per-wheel speed factor (1.0 = as commanded): two motors rarely spin
+        # at the same rate for the same duty cycle, and the robot pivots.
+        self.trim = {m: 1.0 for m in MOTORS}
+        self.trim.update(trim or {})
         self.request = None
         self._lock = threading.Lock()
 
@@ -230,9 +234,10 @@ class MecanumController:
             'RR': vy + vx - omega,
         }
 
-        # Normalize if > 1, then apply speed and direction
+        # Normalize if > 1, then apply speed, wheel trim and direction
         max_val = max(1, *(abs(w) for w in wheels.values()))
-        self._apply({m: (int(abs(w) / max_val * speed), w >= 0) for m, w in wheels.items()})
+        self._apply({m: (int(abs(w) / max_val * speed * self.trim[m]), w >= 0)
+                     for m, w in wheels.items()})
 
     def forward(self, speed: int = 50):
         self.move(0, 1, 0, speed)

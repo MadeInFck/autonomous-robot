@@ -63,6 +63,24 @@ def load_robot_config() -> dict:
         return {}
 
 
+def _build_motor_trim(config: dict) -> dict:
+    """Per-wheel speed factors from robot_config.yaml (`motors: trim:`).
+
+    Only slowing a wheel down is accepted (0.5-1.0): a factor above 1 would
+    be clipped at full speed and the correction would vanish there.
+    """
+    trim = {}
+    for motor, value in (config.get('motors', {}).get('trim') or {}).items():
+        if motor in MOTORS and isinstance(value, (int, float)) and 0.5 <= value <= 1.0:
+            trim[motor] = float(value)
+        else:
+            logger.warning(f"motors.trim.{motor}={value!r} ignore "
+                           "(attendu: FL/FR/RL/RR entre 0.5 et 1.0)")
+    if any(v != 1.0 for v in trim.values()):
+        logger.info("Correction moteurs: " + ", ".join(f"{m} x{v:.2f}" for m, v in trim.items()))
+    return trim
+
+
 def _build_motor_pins(config: dict):
     """Builds a motor pin config dict from robot_config.yaml, or None to use the driver's defaults."""
     pins_cfg = config.get('motors', {}).get('pins')
@@ -139,7 +157,8 @@ class RobotApp:
         print("=" * 50)
 
         self.motor_controller = _init_component(
-            "Motors", lambda: MecanumController(motor_config=_build_motor_pins(config))
+            "Motors", lambda: MecanumController(motor_config=_build_motor_pins(config),
+                                               trim=_build_motor_trim(config))
         ) if enable_motors else None
         self.sensor_receiver = _init_component(
             "UART", lambda: _open_uart(uart_cfg.get('port', UART_PORT),

@@ -116,6 +116,31 @@ class TestMecanumKinematics:
             assert status[motor]['speed'] == 0
 
 
+class TestTrim:
+    """Per-wheel correction for motors that don't spin at the same rate."""
+
+    def test_trim_slows_the_trimmed_wheels_only(self):
+        ctrl = MecanumController(trim={'FL': 0.9, 'RL': 0.9})
+        try:
+            ctrl.move(vx=0, vy=1, omega=0, speed=60)
+            status = ctrl.get_status()
+            assert status['FL']['speed'] == status['RL']['speed'] == 54
+            assert status['FR']['speed'] == status['RR']['speed'] == 60
+        finally:
+            ctrl.close()
+
+    def test_no_trim_by_default(self, controller):
+        assert controller.trim == {m: 1.0 for m in MOTORS}
+
+    def test_trim_keeps_the_direction(self):
+        ctrl = MecanumController(trim={'FR': 0.8})
+        try:
+            ctrl.move(vx=0, vy=-1, omega=0, speed=100)
+            assert ctrl.get_status()['FR'] == {'speed': 80, 'forward': False}
+        finally:
+            ctrl.close()
+
+
 class TestNormalization:
     def test_values_never_exceed_speed(self, controller):
         """Motor speeds must never exceed the max speed"""

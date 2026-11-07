@@ -598,6 +598,29 @@ class TestLidarSwitch:
         assert r.status_code == 500 and 'port occupe' in r.get_json()['message']
 
 
+class TestMotorTrimConfig:
+    """robot_config.yaml `motors: trim:` -> MecanumController factors."""
+
+    @staticmethod
+    def _trim(trim):
+        import main
+        return main._build_motor_trim({'motors': {'trim': trim}})
+
+    def test_valid_values_kept(self):
+        assert self._trim({'FL': 0.95, 'RL': 1}) == {'FL': 0.95, 'RL': 1.0}
+
+    def test_out_of_range_and_unknown_ignored(self, caplog):
+        with caplog.at_level('WARNING'):
+            trim = self._trim({'FL': 1.2, 'FR': 0.1, 'XX': 0.9, 'RR': 'fast', 'RL': 0.9})
+        assert trim == {'RL': 0.9}
+        assert len([r for r in caplog.records if 'motors.trim' in r.message]) == 4
+
+    def test_absent_section(self):
+        import main
+        assert main._build_motor_trim({}) == {}
+        assert main._build_motor_trim({'motors': {'trim': None}}) == {}
+
+
 class TestLoadWebConfig:
     """main.load_web_config must be fail-closed: any problem raises."""
 
