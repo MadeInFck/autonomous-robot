@@ -9,7 +9,7 @@ Autonomous Mecanum wheeled robot with distributed architecture Raspberry Pi 5 + 
 ```
 Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 ┌─────────────────────────────┐         ┌──────────────────────────────┐
-│ • NEO-6M GPS (UART1)        │         │ • 4 Mecanum motors (HW-249)  │
+│ • NEO-6M GPS (UART1)        │         │ • 4 Mecanum motors (2×L298N) │
 │ • IMU I2C1 (BMI160/BNO085)  │◄─UART3─►│ • Omnidirectional control    │
 │ • Sensor acquisition 10Hz   │         │ • Flask web server (WiFi)    │
 │ • TX: GP0, RX: GP1          │         │ • TX: GPIO8, RX: GPIO9       │
@@ -102,7 +102,7 @@ Driver: `pico/lib/bno085.py`
 
 **Heading convention**: N=0°, E=90°, S=180°, W=270° (clockwise = increasing). Mount the sensor flat with the X arrow pointing toward the robot's front.
 
-### Mecanum Motors (HW-249 / L9110S)
+### Mecanum Motors (2 × L298N)
 
 ```
 Top view of the robot:
@@ -113,14 +113,27 @@ Top view of the robot:
     RL ──────── RR
 ```
 
-| Motor  | GPIO IN1 | GPIO IN2 |
-|--------|----------|----------|
-| FL     | 17       | 27       |
-| FR     | 22       | 23       |
-| RL     | 24       | 25       |
-| RR     | 5        | 6        |
+| Motor | GPIO IN1 | GPIO IN2 | L298N inputs |
+|-------|----------|----------|--------------|
+| FL    | 17       | 27       | #1 IN1 / IN2 |
+| FR    | 22       | 23       | #1 IN3 / IN4 |
+| RL    | 24       | 25       | #2 IN1 / IN2 |
+| RR    | 5        | 6        | #2 IN3 / IN4 |
 
-Software PWM 100 Hz via `gpiod`. Motor power supply: 5V, **5A minimum** (4 mecanum motors under load draw more than a 4A supply can provide — insufficient amperage causes brownouts/resets that can look like software bugs).
+Software PWM 100 Hz via `gpiod`.
+
+**Power** (12 V battery, 3S Li-ion, 12.6 V when full):
+
+```
+Battery 12 V ── 10 A fuse ──┬── 12V input of L298N #1 and #2 (5V terminal left unconnected)
+                            └── DC-DC buck 12 V → 5 V (10 A) ── USB-C ── Pi 5
+GND: battery, both L298N, buck and Pi (pin 14) all tied together
+```
+
+- On each L298N keep all 3 jumpers fitted: 5V-EN (logic regulator), ENA and ENB (motors always enabled). Speed is software PWM on IN1–IN4.
+- FL/FR go to L298N #1 (IN1/IN2, IN3/IN4), RL/RR to L298N #2.
+- The L298N GND **must** be tied to a Pi GND pin (pin 14), otherwise the GPIO signals have no reference.
+- Do not run the 4-channel HW-249 (L9110S) board at 12 V: its pull-ups pull the inputs up to VCC, it no longer sees the Pi's 3.3 V as high and back-feeds current into the GPIOs.
 
 ## Installation
 
