@@ -425,6 +425,24 @@ class TestPilotHeartbeatWatchdog:
         self._run_watchdog(server)
         assert motors.stop.called
 
+    def test_joystick_loss_logged_once_when_moving(self, caplog):
+        """A cut that stopped a moving robot is a felt jerk: worth a warning."""
+        motors = MagicMock()
+        motors.get_status.return_value = {'FL': {'speed': 80}, 'FR': {'speed': 80}}
+        server = WebServer(motor_controller=motors)
+        server._last_move_time = time.time() - 10
+        with caplog.at_level('WARNING'):
+            self._run_watchdog(server)
+        assert len([r for r in caplog.records if 'Joystick muet' in r.message]) == 1
+
+    def test_idle_robot_not_logged(self, caplog):
+        motors = MagicMock()
+        motors.get_status.return_value = {'FL': {'speed': 0}}
+        server = WebServer(motor_controller=motors)
+        with caplog.at_level('WARNING'):
+            self._run_watchdog(server)
+        assert not any('Joystick muet' in r.message for r in caplog.records)
+
 
 class TestRecordFreshness:
     """A frozen UART link (Pico dead) must not be recorded as a waypoint."""

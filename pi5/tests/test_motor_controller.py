@@ -218,8 +218,10 @@ class _PinRecorder:
 @pytest.fixture
 def pwm(monkeypatch):
     recorder = _PinRecorder()
+    # raising=False: gpiod is a MagicMock here, whose attributes only exist
+    # once touched (pytest >= 9.2 checks for the attribute first)
     monkeypatch.setattr(motor_controller.gpiod, 'request_lines',
-                        lambda *args, **kwargs: recorder)
+                        lambda *args, **kwargs: recorder, raising=False)
 
     class SlowPWM(MecanumController):
         PWM_HZ = 10  # 100 ms cycles: duty measurable despite scheduler jitter
@@ -310,6 +312,6 @@ class TestGpioFailure:
         """GPIO held by another process must not silently become simulation."""
         def busy(*args, **kwargs):
             raise OSError(16, 'Device or resource busy')
-        monkeypatch.setattr(motor_controller.gpiod, 'request_lines', busy)
+        monkeypatch.setattr(motor_controller.gpiod, 'request_lines', busy, raising=False)
         with pytest.raises(RuntimeError, match='busy'):
             MecanumController()

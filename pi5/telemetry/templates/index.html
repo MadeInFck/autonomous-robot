@@ -213,7 +213,7 @@
 
         <div class="speed-control">
             <button class="speed-btn" id="speedDown">-</button>
-            <span class="speed-value" id="speedValue">30%</span>
+            <span class="speed-value" id="speedValue">60%</span>
             <button class="speed-btn" id="speedUp">+</button>
         </div>
     </div>
@@ -311,7 +311,7 @@
             setTimeout(() => t.classList.remove('show'), duration);
         }
         /* ===== Joystick control (unchanged) ===== */
-        let moveX = 0, moveY = 0, rotation = 0, maxSpeed = 30;
+        let moveX = 0, moveY = 0, rotation = 0, maxSpeed = 60;  // below ~40 % the motors stall (L298N)
         const moveJoystick = document.getElementById('moveJoystick');
         const moveStick = document.getElementById('moveStick');
         const rotateJoystick = document.getElementById('rotateJoystick');
@@ -373,27 +373,49 @@
             document.getElementById('telR').textContent = rotation.toFixed(2);
         }
 
-        let sendTimeout = null;
+        // Sends the current joystick state: at most one request every
+        // MOVE_MIN_INTERVAL_MS and one in flight, always with the latest
+        // values. This used to be a 50 ms debounce: a thumb moving on the
+        // stick (pointermove every ~12 ms) kept pushing it back, nothing was
+        // sent, and the robot's 0.5 s watchdog cut the motors — jerky driving.
+        const MOVE_MIN_INTERVAL_MS = 50;
+        let moveInFlight = false, movePending = false, moveTimer = null, lastMoveSent = 0;
         function sendCommand() {
-            if (sendTimeout) clearTimeout(sendTimeout);
-            sendTimeout = setTimeout(async () => {
-                try {
-                    const res = await apiFetch('/api/move', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({vx: moveX, vy: moveY, omega: rotation, speed: maxSpeed})
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        setConnected(true);
-                        if (data.motors) {
-                            const m = data.motors;
-                            document.getElementById('motorStatus').textContent =
-                                `FL:${m.FL?.speed||0} FR:${m.FR?.speed||0} RL:${m.RL?.speed||0} RR:${m.RR?.speed||0}`;
-                        }
+            movePending = true;
+            if (moveInFlight || moveTimer) return;
+            const wait = lastMoveSent + MOVE_MIN_INTERVAL_MS - Date.now();
+            if (wait > 0) {
+                moveTimer = setTimeout(() => { moveTimer = null; sendCommand(); }, wait);
+                return;
+            }
+            movePending = false;
+            moveInFlight = true;
+            lastMoveSent = Date.now();
+            postMove().finally(() => {
+                moveInFlight = false;
+                if (movePending) sendCommand();
+            });
+        }
+        async function postMove() {
+            try {
+                const res = await apiFetch('/api/move', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({vx: moveX, vy: moveY, omega: rotation, speed: maxSpeed}),
+                    // One request at a time: a stalled one (WiFi drop) must not
+                    // hold back every later command
+                    signal: AbortSignal.timeout ? AbortSignal.timeout(1000) : undefined,
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setConnected(true);
+                    if (data.motors) {
+                        const m = data.motors;
+                        document.getElementById('motorStatus').textContent =
+                            `FL:${m.FL?.speed||0} FR:${m.FR?.speed||0} RL:${m.RL?.speed||0} RR:${m.RR?.speed||0}`;
                     }
-                } catch(e) { setConnected(false); }
-            }, 50);
+                }
+            } catch(e) { setConnected(false); }
         }
         let _wasConnected = null;
         function setConnected(c) {

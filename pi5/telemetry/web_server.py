@@ -543,6 +543,7 @@ class WebServer:
         lost). Patrol: the pilot's control thread stopped beating.
         """
         pilot_stalled = False
+        joystick_lost = False
         while self._running:
             time.sleep(0.1)
             if not self.motor_controller:
@@ -568,7 +569,17 @@ class WebServer:
                 continue
             pilot_stalled = False
             if time.time() - self._last_move_time > _MOVE_WATCHDOG_S:
+                # Logged once per cut, and only when it actually stopped a
+                # moving robot: that is a jerk the driver felt (slow WiFi,
+                # phone asleep), not the idle state.
+                if not joystick_lost and any(
+                        m['speed'] for m in self.motor_controller.get_status().values()):
+                    logger.warning("Joystick muet depuis >%.1fs: moteurs arretes",
+                                   _MOVE_WATCHDOG_S)
+                    joystick_lost = True
                 self.motor_controller.stop()
+            else:
+                joystick_lost = False
 
     def start(self, threaded=True):
         local_ip = get_local_ip()
