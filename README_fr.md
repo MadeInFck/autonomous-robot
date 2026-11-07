@@ -9,7 +9,7 @@ Robot autonome à roues Mecanum avec architecture distribuée Raspberry Pi 5 + P
 ```
 Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 ┌─────────────────────────────┐         ┌──────────────────────────────┐
-│ • NEO-6M GPS (UART1)        │         │ • 4 moteurs Mecanum (HW-249) │
+│ • NEO-6M GPS (UART1)        │         │ • 4 moteurs Mecanum (2×L298N)│
 │ • IMU I2C1 (BMI160/BNO085)  │◄─UART3─►│ • Contrôle omnidirectionnel  │
 │ • Acquisition capteurs 10Hz │         │ • Serveur Flask (WiFi)       │
 │ • TX: GP0, RX: GP1          │         │ • TX: GPIO8, RX: GPIO9       │
@@ -102,7 +102,7 @@ Driver : `pico/lib/bno085.py`
 
 **Convention du cap** : N=0°, E=90°, S=180°, W=270° (sens horaire = croissant). Le capteur doit être monté à plat avec la flèche X pointant vers l'avant du robot.
 
-### Moteurs Mecanum (HW-249 / L9110S)
+### Moteurs Mecanum (2 × L298N)
 
 ```
 Vue de dessus du robot:
@@ -113,26 +113,26 @@ Vue de dessus du robot:
     RL ──────── RR
 ```
 
-| Moteur | GPIO IN1 | GPIO IN2 |
-|--------|----------|----------|
-| FL     | 17       | 27       |
-| FR     | 22       | 23       |
-| RL     | 24       | 25       |
-| RR     | 5        | 6        |
+| Moteur | GPIO IN1 | GPIO IN2 | Entrées L298N |
+|--------|----------|----------|---------------|
+| FL     | 17       | 27       | n°1 IN1 / IN2 |
+| FR     | 22       | 23       | n°1 IN3 / IN4 |
+| RL     | 24       | 25       | n°2 IN1 / IN2 |
+| RR     | 5        | 6        | n°2 IN3 / IN4 |
 
 PWM logiciel 100 Hz via `gpiod`.
 
 **Alimentation** (batterie 12 V, Li-ion 3S, 12,6 V pleine) :
 
 ```
-Batterie 12 V ── fusible 10 A ──┬── VCC HW-249 (via diode 6A10, ~11,8 V : le L9110S est limité à 12 V)
+Batterie 12 V ── fusible 10 A ──┬── 12V L298N n°1 et n°2 (borne 5V libre)
                                 └── buck DC-DC 12 V → 5 V (10 A) ── USB-C ── Pi 5
-GND : batterie, HW-249, buck et Pi (broche 14) tous reliés
+GND : batterie, 2 L298N, buck et Pi (broche 14) tous reliés
 ```
 
-- Le GND de la HW-249 **doit** être relié à un GND du Pi (broche 14), sinon les signaux GPIO n'ont pas de référence.
-- N'alimente jamais la HW-249 par le 5 V du Pi : les moteurs feraient chuter la tension du Pi.
-- Le L9110S tient ~0,8 A en continu par canal : monte la vitesse progressivement dans le code et laisse les puces ventilées.
+- Sur chaque L298N, les 3 cavaliers restent en place : 5V-EN (régulateur logique), ENA et ENB (moteurs toujours activés). La vitesse passe par le PWM logiciel sur IN1–IN4.
+- Le GND des L298N **doit** être relié à un GND du Pi (broche 14), sinon les signaux GPIO n'ont pas de référence.
+- N'utilise pas la carte 4 canaux HW-249 (L9110S) en 12 V : ses résistances de rappel remontent ses entrées vers le VCC, elle ne reconnaît plus le 3,3 V du Pi et renvoie du courant dans les GPIO.
 
 ## Installation
 
