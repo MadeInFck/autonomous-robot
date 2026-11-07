@@ -120,7 +120,19 @@ Top view of the robot:
 | RL     | 24       | 25       |
 | RR     | 5        | 6        |
 
-Software PWM 100 Hz via `gpiod`. Motor power supply: 5V, **5A minimum** (4 mecanum motors under load draw more than a 4A supply can provide — insufficient amperage causes brownouts/resets that can look like software bugs).
+Software PWM 100 Hz via `gpiod`.
+
+**Power** (12 V battery, 3S Li-ion, 12.6 V when full):
+
+```
+Battery 12 V ── 10 A fuse ──┬── HW-249 VCC (through a 6A10 diode, ~11.8 V: L9110S max is 12 V)
+                            └── DC-DC buck 12 V → 5 V (10 A) ── USB-C ── Pi 5
+GND: battery, HW-249, buck and Pi (pin 14) all tied together
+```
+
+- The HW-249 GND **must** be tied to a Pi GND pin (pin 14), otherwise the GPIO signals have no reference.
+- Never feed the HW-249 from the Pi's 5 V: the motors would brown out the Pi.
+- The L9110S is rated ~0.8 A continuous per channel: ramp up speed in software and keep the chips ventilated.
 
 ## Installation
 

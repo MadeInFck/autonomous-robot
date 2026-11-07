@@ -120,7 +120,19 @@ Vue de dessus du robot:
 | RL     | 24       | 25       |
 | RR     | 5        | 6        |
 
-PWM logiciel 100 Hz via `gpiod`. Alimentation moteurs : 5V, **5A minimum** (les 4 moteurs mecanum en charge peuvent dépasser ce qu'une alimentation 4A peut fournir — un ampérage insuffisant provoque des brownouts/resets qui peuvent ressembler à des bugs logiciels).
+PWM logiciel 100 Hz via `gpiod`.
+
+**Alimentation** (batterie 12 V, Li-ion 3S, 12,6 V pleine) :
+
+```
+Batterie 12 V ── fusible 10 A ──┬── VCC HW-249 (via diode 6A10, ~11,8 V : le L9110S est limité à 12 V)
+                                └── buck DC-DC 12 V → 5 V (10 A) ── USB-C ── Pi 5
+GND : batterie, HW-249, buck et Pi (broche 14) tous reliés
+```
+
+- Le GND de la HW-249 **doit** être relié à un GND du Pi (broche 14), sinon les signaux GPIO n'ont pas de référence.
+- N'alimente jamais la HW-249 par le 5 V du Pi : les moteurs feraient chuter la tension du Pi.
+- Le L9110S tient ~0,8 A en continu par canal : monte la vitesse progressivement dans le code et laisse les puces ventilées.
 
 ## Installation
 
