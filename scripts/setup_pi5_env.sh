@@ -51,7 +51,14 @@ sudo apt-get install -y \
     python3-venv \
     python3-pip \
     python3-libgpiod \
-    libgpiod-dev
+    libgpiod-dev \
+    rsync \
+    imx500-all \
+    python3-picamera2 \
+    python3-opencv
+# imx500-all: AI camera firmware + models (/usr/share/imx500-models).
+# python3-opencv: draws the boxes and encodes the JPEG of the video stream;
+# without it detection still runs but the stream stays black.
 
 # 3. Create the virtual environment
 echo ""

@@ -258,6 +258,12 @@ class AiCamera:
         except ImportError as e:
             logger.error(f"Init error: {e}")
             self._error = True
+        else:
+            # The worker encodes stream frames with OpenCV only: without it
+            # detection works but the video stream is never produced.
+            if importlib.util.find_spec('cv2') is None:
+                logger.warning("OpenCV absent: detection seule, pas de flux video "
+                               "(sudo apt install python3-opencv)")
 
     def start(self):
         """Spawn the camera subprocess. Starts active (not paused)."""

@@ -51,6 +51,9 @@ nmcli con modify "$CON_NAME" 802-11-wireless.channel 6
 nmcli con modify "$CON_NAME" 802-11-wireless-security.key-mgmt wpa-psk
 nmcli con modify "$CON_NAME" 802-11-wireless-security.psk "$PASSPHRASE"
 nmcli con modify "$CON_NAME" 802-11-wireless-security.pmf 2
+# WiFi power save (on by default with brcmfmac) delays packets while the chip
+# dozes: SSH sessions and the joystick stall for seconds. 2 = disabled.
+nmcli con modify "$CON_NAME" 802-11-wireless.powersave 2
 nmcli con modify "$CON_NAME" ipv4.method shared
 nmcli con modify "$CON_NAME" ipv4.addresses "${AP_IP}/24"
 nmcli con modify "$CON_NAME" connection.autoconnect yes

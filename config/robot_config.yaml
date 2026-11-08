@@ -43,9 +43,9 @@ motors:
     # robot pivots right when driving straight (heading increases), the left
     # wheels are faster -> lower FL and RL, e.g. 0.95, and try again.
     trim:
-        FL: 0.95
+        FL: 0.97
         FR: 1.0
-        RL: 0.95
+        RL: 0.97
         RR: 1.0
 
 # LiDAR RPLidar C1 (USB)
