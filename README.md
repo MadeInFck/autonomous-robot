@@ -60,7 +60,7 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 
 ### IMU → Pico (I2C1, 100 kHz)
 
-Two IMU options are supported on the same pins. `pico/main.py` **auto-detects** whichever is connected: BNO085 at `0x4A` takes priority; BMI160 at `0x68` is the fallback. No configuration needed.
+Two IMU options are supported on the same pins. `pico/main.py` **auto-detects** whichever is connected: BNO085 at `0x4A` takes priority; BMI160 at `0x68` is the fallback. No configuration needed. Only the driver of the connected sensor is loaded: copy `lib/bno085.py` **or** `lib/bmi160_raw.py` to the Pico. With no IMU detected, the Pico keeps sending GPS.
 
 **Option A — BMI160** (accelerometer + gyroscope, cheap/common)
 
@@ -338,7 +338,7 @@ Bytes  2-31  : PAYLOAD (30 bytes)
   4-5        : Accelerometer X   (int16, in mg — with BNO085: pitch in 0.01°)
   6-7        : Accelerometer Y   (int16, in mg — with BNO085: roll in 0.01°)
   8-9        : Accelerometer Z   (int16, in mg)
-  10-11      : Gyroscope X       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
+  10-11      : Gyroscope X       (int16, in 0.1°/s — BMI160 ; with BNO085 = GPS course (COG) in 0.1°)
   12-13      : Gyroscope Y       (int16, in 0.1°/s — BMI160 ; always 0 with BNO085)
   14-15      : Gyroscope Z       (int16, in 0.1°/s — BMI160 ; with BNO085 = heading_accuracy_deg × 10,
                                   max 1800 for 180°)
@@ -346,10 +346,11 @@ Bytes  2-31  : PAYLOAD (30 bytes)
   20-23      : Longitude         (int32, in microdegrees)
   24-25      : Altitude          (int16, in decimeters)
   26-27      : Speed             (uint16, in cm/s)
-  28-29      : Heading           (uint16, in 0.01° — GPS COG with BMI160, BNO085 yaw with BNO085)
+  28-29      : Heading           (uint16, in 0.01° — BNO085 yaw if bit 6, else GPS COG)
   30         : Satellites        (uint8, satellite count)
   31         : Fix quality/flags (uint8 — bits 0-3: 0=no fix, 1=GPS, 2=DGPS;
-                                  bit 7: IMU is BNO085. Both sides must be
+                                  bit 6: heading is a live BNO085 yaw; bit 7: IMU is BNO085.
+                                  Both sides must be
                                   deployed together when this byte changes)
 Byte   32    : CRC-8 (polynomial 0x07, over payload)
 Byte   33    : ETX (0x03)

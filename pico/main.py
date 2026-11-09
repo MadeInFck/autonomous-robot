@@ -8,6 +8,9 @@ Hardware:
 - IMU on I2C1 (SDA=GP14, SCL=GP15) @ 100 kHz
   BNO085 at 0x4A (preferred — absolute heading via mag fusion)
   BMI160 at 0x68 (fallback — accel + gyro, GPS COG for heading)
+  Each driver is imported only when its sensor answers: a Pico without a
+  BMI160 does not need lib/bmi160_raw.py, and without lib/bno085.py if it
+  has no BNO085.
 
 Protocol: STX/ETX + CRC8 (compatible with TestInterfaceUART)
 
@@ -35,7 +38,6 @@ from lib.protocole import (
     FLAG_IMU_BNO085,
     FLAG_IMU_HEADING,
 )
-from lib.bmi160_raw import BMI160Raw
 from lib.gps_reader import GPSReader
 from lib.micropyGPS import MicropyGPS
 
@@ -68,14 +70,24 @@ UPDATE_RATE = 10  # Hz
 UPDATE_INTERVAL_MS = 1000 // UPDATE_RATE
 
 
+class NoImu:
+    """Stands in for a missing IMU: always invalid, all zeros."""
+
+    _ZERO = {'acc_x': 0.0, 'acc_y': 0.0, 'acc_z': 0.0,
+             'gyr_x': 0.0, 'gyr_y': 0.0, 'gyr_z': 0.0, 'valid': False}
+
+    def read_calibrated(self):
+        return self._ZERO
+
+
 def init_hardware():
     """
-    Initialize all hardware. Auto-detects BNO085 (0x4A) first,
-    falls back to BMI160 (0x68) if not found.
+    Initialize all hardware. Auto-detects BNO085 (0x4A) first, then
+    BMI160 (0x68); with neither, runs GPS-only (NoImu).
 
     Returns:
         tuple: (uart_pi5, imu, imu_type, gps, led)
-               imu_type is 'BNO085' or 'BMI160'
+               imu_type is 'BNO085', 'BMI160' or 'NONE'
     """
     print("\n=== Initialisation Hardware ===")
 
@@ -112,12 +124,19 @@ def init_hardware():
         imu = BNO085(i2c, addr=IMU_ADDR_BNO085, rate_hz=50)
         imu_type = 'BNO085'
         print(f"  IMU: BNO085 @ 0x{IMU_ADDR_BNO085:02X}")
-    else:
+    elif IMU_ADDR_BMI160 in devices:
+        from lib.bmi160_raw import BMI160Raw
         imu = BMI160Raw(i2c, addr=IMU_ADDR_BMI160)
         if not imu.has_error():
             imu.calibrate()
         imu_type = 'BMI160'
         print(f"  IMU: BMI160 @ 0x{IMU_ADDR_BMI160:02X}")
+    else:
+        # Loose wire or no sensor: keep sending GPS to the Pi5, flagged
+        # as an invalid IMU (the same frames a failing BMI160 would send)
+        imu = NoImu()
+        imu_type = 'NONE'
+        print("  IMU: aucune centrale detectee, GPS seul")
 
     led.off()
     print("=== Hardware OK ===\n")

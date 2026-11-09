@@ -60,7 +60,7 @@ Raspberry Pi Pico (MicroPython)          Raspberry Pi 5 (Python)
 
 ### IMU → Pico (I2C1, 100 kHz)
 
-Deux options IMU sont supportées sur les mêmes broches. `pico/main.py` **auto-détecte** le capteur branché : BNO085 à `0x4A` en priorité, BMI160 à `0x68` en fallback. Aucune configuration nécessaire.
+Deux options IMU sont supportées sur les mêmes broches. `pico/main.py` **auto-détecte** le capteur branché : BNO085 à `0x4A` en priorité, BMI160 à `0x68` en fallback. Aucune configuration nécessaire. Seul le driver du capteur branché est chargé : il suffit de copier sur le Pico `lib/bno085.py` **ou** `lib/bmi160_raw.py`. Sans aucune centrale détectée, le Pico continue d'envoyer le GPS.
 
 **Option A — BMI160** (accéléromètre + gyroscope, courant/économique)
 
@@ -337,7 +337,7 @@ Octets 2-31  : PAYLOAD (30 bytes)
   4-5        : Accéléromètre X   (int16, en mg — avec BNO085 : pitch en 0.01°)
   6-7        : Accéléromètre Y   (int16, en mg — avec BNO085 : roll en 0.01°)
   8-9        : Accéléromètre Z   (int16, en mg)
-  10-11      : Gyroscope X       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
+  10-11      : Gyroscope X       (int16, en 0.1°/s — BMI160 ; avec BNO085 = cap GPS (COG) en 0.1°)
   12-13      : Gyroscope Y       (int16, en 0.1°/s — BMI160 ; toujours 0 avec BNO085)
   14-15      : Gyroscope Z       (int16, en 0.1°/s — BMI160 ; avec BNO085 = heading_accuracy_deg × 10,
                                   max 1800 pour 180°)
@@ -345,10 +345,11 @@ Octets 2-31  : PAYLOAD (30 bytes)
   20-23      : Longitude         (int32, en microdegrés)
   24-25      : Altitude          (int16, en décimètres)
   26-27      : Vitesse           (uint16, en cm/s)
-  28-29      : Cap               (uint16, en 0.01° — GPS COG avec BMI160, yaw BNO085 avec BNO085)
+  28-29      : Cap               (uint16, en 0.01° — yaw BNO085 si bit 6, sinon GPS COG)
   30         : Satellites        (uint8, nombre de satellites)
   31         : Fix qualité/flags (uint8 — bits 0-3 : 0=no fix, 1=GPS, 2=DGPS ;
-                                  bit 7 : IMU = BNO085. Redéployer Pico et Pi5
+                                  bit 6 : cap = yaw BNO085 vivant ; bit 7 : IMU = BNO085.
+                                  Redéployer Pico et Pi5
                                   ensemble si cet octet évolue)
 Octet  32    : CRC-8 (polynôme 0x07, sur le payload)
 Octet  33    : ETX (0x03)
