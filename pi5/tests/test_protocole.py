@@ -15,11 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'pico', '
 from uart_receiver import (
     calc_crc8 as pi5_crc8, parse_payload, PAYLOAD_LEN, STX, ETX,
     FLAG_IMU_BNO085 as PI5_FLAG_BNO085,
+    FLAG_IMU_HEADING as PI5_FLAG_HEADING,
     FIX_QUALITY_MASK as PI5_FIX_MASK,
 )
 from protocole import (
     calc_crc8 as pico_crc8, build_frame, PAYLOAD_LEN as PICO_PAYLOAD_LEN,
-    FLAG_IMU_BNO085, FIX_QUALITY_MASK,
+    FLAG_IMU_BNO085, FLAG_IMU_HEADING, FIX_QUALITY_MASK,
     convert_accel_g_to_mg, convert_gyro_dps_to_raw,
     convert_coord_to_microdeg, convert_alt_m_to_dm,
     convert_speed_ms_to_cms, convert_heading_to_raw,
@@ -73,7 +74,10 @@ class TestConstantes:
     def test_flags_match(self):
         """Flag constants must be identical on both sides"""
         assert FLAG_IMU_BNO085 == PI5_FLAG_BNO085 == 0x80
+        assert FLAG_IMU_HEADING == PI5_FLAG_HEADING == 0x40
         assert FIX_QUALITY_MASK == PI5_FIX_MASK == 0x0F
+        # The flags must not leak into the GPS fix quality
+        assert not (FLAG_IMU_HEADING | FLAG_IMU_BNO085) & FIX_QUALITY_MASK
 
 
 # ===== Conversions =====

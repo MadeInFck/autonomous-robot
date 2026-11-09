@@ -42,7 +42,6 @@ _PILOT_OPTIONS = {
     'patrol_speed': 'patrol_speed',
     'obstacle_distance': 'obstacle_distance_mm',
     'loop': 'loop_patrol',
-    'heading_offset_deg': 'heading_offset_deg',
 }
 _PID_OPTIONS = {'kp': 'pid_kp', 'ki': 'pid_ki', 'kd': 'pid_kd'}
 
@@ -81,6 +80,25 @@ def _build_motor_trim(config: dict) -> dict:
     return trim
 
 
+def _heading_offset(config: dict) -> float:
+    """BNO085 mounting correction from robot_config.yaml (`imu: heading_offset_deg:`).
+
+    Real heading = sensor yaw + offset. Only for a sensor mounted rotated on
+    the robot: a magnetic error depends on the direction the robot faces and
+    is the calibration's job, a constant offset cannot fix it.
+    """
+    value = config.get('imu', {}).get('heading_offset_deg', 0.0)
+    if 'heading_offset_deg' in config.get('navigation', {}):
+        logger.warning("navigation.heading_offset_deg n'est plus lu: "
+                       "deplacez-le sous imu: heading_offset_deg")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not -180 <= value <= 360:
+        logger.warning(f"imu.heading_offset_deg={value!r} ignore (attendu: -180 a 360)")
+        return 0.0
+    if value:
+        logger.info(f"Correction de cap BNO085: {value:+.1f} deg")
+    return float(value)
+
+
 def _build_motor_pins(config: dict):
     """Builds a motor pin config dict from robot_config.yaml, or None to use the driver's defaults."""
     pins_cfg = config.get('motors', {}).get('pins')
@@ -109,8 +127,8 @@ def _init_component(name: str, factory, optional: bool = False):
         return None
 
 
-def _open_uart(port: str, baudrate: int) -> UARTReceiver:
-    receiver = UARTReceiver(port=port, baudrate=baudrate)
+def _open_uart(port: str, baudrate: int, heading_offset_deg: float = 0.0) -> UARTReceiver:
+    receiver = UARTReceiver(port=port, baudrate=baudrate, heading_offset_deg=heading_offset_deg)
     if not receiver.open():
         raise RuntimeError(f"impossible d'ouvrir le port {port}")
     receiver.start_async()
@@ -162,7 +180,8 @@ class RobotApp:
         ) if enable_motors else None
         self.sensor_receiver = _init_component(
             "UART", lambda: _open_uart(uart_cfg.get('port', UART_PORT),
-                                       uart_cfg.get('baudrate', UART_BAUDRATE))
+                                       uart_cfg.get('baudrate', UART_BAUDRATE),
+                                       _heading_offset(config))
         ) if enable_sensors else None
         self.lidar_scanner = _init_component(
             "LiDAR", lambda: _start_lidar(lidar_port,

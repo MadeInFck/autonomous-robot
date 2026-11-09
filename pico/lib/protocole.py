@@ -12,12 +12,15 @@ PAYLOAD_LEN = 30
 
 # fix_quality byte layout:
 #   bits 0-3: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
+#   bit 6:    cap carries a live BNO085 yaw; without it cap is the GPS course
 #   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (0.01 deg units,
-#             int16 covers the full +/-180 deg), gyr_z carries
-#             heading_accuracy (0.1 deg units)
+#             int16 covers the full +/-180 deg), gyr_x the GPS course
+#             (0.1 deg units), gyr_z heading_accuracy (0.1 deg units)
 # Replaces the old implicit detection (gyr_x==0 and gyr_y==0), which a
-# perfectly still BMI160 could trigger by accident.
+# perfectly still BMI160 could trigger by accident. The GPS course travels
+# separately so the Pi can steer on it while the compass is uncalibrated.
 FIX_QUALITY_MASK = 0x0F
+FLAG_IMU_HEADING = 0x40
 FLAG_IMU_BNO085 = 0x80
 
 
@@ -111,6 +114,11 @@ def convert_speed_ms_to_cms(ms: float) -> int:
 def convert_heading_to_raw(deg: float) -> int:
     """Convert heading in degrees to raw unit (0.01 deg)"""
     return int(deg * 100) % 36000
+
+
+def convert_course_to_raw(deg: float) -> int:
+    """Convert a GPS course (0-360 deg) to 0.1 deg units (fits the int16 gyr_x field)"""
+    return int(deg * 10) % 3600
 
 
 def convert_angle_to_centideg(deg: float) -> int:

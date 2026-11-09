@@ -621,6 +621,32 @@ class TestMotorTrimConfig:
         assert main._build_motor_trim({'motors': {'trim': None}}) == {}
 
 
+class TestHeadingOffsetConfig:
+    """robot_config.yaml `imu: heading_offset_deg:` -> UARTReceiver."""
+
+    def test_default_is_no_correction(self):
+        import main
+        assert main._heading_offset({}) == 0.0
+
+    def test_valid_value_kept(self):
+        import main
+        assert main._heading_offset({'imu': {'heading_offset_deg': -12.5}}) == -12.5
+
+    @pytest.mark.parametrize('value', ['45', 400, float('nan'), True])
+    def test_invalid_value_ignored(self, value, caplog):
+        import main
+        with caplog.at_level('WARNING'):
+            assert main._heading_offset({'imu': {'heading_offset_deg': value}}) == 0.0
+        assert any('imu.heading_offset_deg' in r.message for r in caplog.records)
+
+    def test_old_location_is_reported_not_used(self, caplog):
+        """The +45 under navigation: used to be added by the pilot only."""
+        import main
+        with caplog.at_level('WARNING'):
+            assert main._heading_offset({'navigation': {'heading_offset_deg': 45.0}}) == 0.0
+        assert any('navigation.heading_offset_deg' in r.message for r in caplog.records)
+
+
 class TestLoadWebConfig:
     """main.load_web_config must be fail-closed: any problem raises."""
 

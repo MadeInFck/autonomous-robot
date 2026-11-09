@@ -6,6 +6,16 @@ uart:
     port: /dev/ttyAMA3 # UART3 on Pi5 (protocol: STX/ETX + CRC-8)
     baudrate: 115200
 
+# BNO085 compass (read by the Pi)
+imu:
+    # Real heading = sensor yaw + offset, applied to the dashboard and the
+    # pilot alike. Only for a sensor mounted rotated on the robot: measure it
+    # once calibrated, against a phone compass, robot facing N, E, S and W —
+    # the offset must be the same in all four directions. A heading error that
+    # varies with direction is magnetic and is the calibration's job.
+    # (The former +45 compensated an uncalibrated sensor.)
+    heading_offset_deg: 0.0
+
 # UART3 pins on Pi5
 # GPIO8 (pin 24) = TX → GP1 (Pico RX)
 # GPIO9 (pin 21) = RX ← GP0 (Pico TX)
@@ -61,7 +71,6 @@ navigation:
     obstacle_distance: 800 # mm - avoidance distance
     patrol_file: config/patrol_route.json
     loop: true # loop the patrol
-    heading_offset_deg: 45.0 # added to BNO085 yaw (real heading = sensor + offset) - depends on physical mounting
     pid:
         kp: 1.0
         ki: 0.05

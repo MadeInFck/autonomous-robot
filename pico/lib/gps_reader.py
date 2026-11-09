@@ -3,20 +3,64 @@ NEO-6M GPS reader for Raspberry Pi Pico (MicroPython)
 Uses micropyGPS to parse NMEA sentences
 """
 
+import time
+
+# MicroPython has wrap-safe ms ticks; plain Python (unit tests) does not
+_ticks_ms = getattr(time, 'ticks_ms', lambda: int(time.monotonic() * 1000))
+_ticks_diff = getattr(time, 'ticks_diff', lambda a, b: a - b)
+
+# The NEO-6M sends a burst of NMEA sentences every second, fix or not: this
+# long without a single valid one means we are listening at the wrong speed.
+BAUD_PROBE_MS = 3000
+
 
 class GPSReader:
-    """GPS reader with built-in NMEA parser"""
+    """GPS reader with built-in NMEA parser and baud rate detection.
 
-    def __init__(self, uart, parser):
+    The module's serial speed lives in its battery-backed RAM: when that
+    backup runs flat (robot left unpowered) it falls back to its factory
+    9600 baud while the Pico still listens at 115200, and no sentence ever
+    parses — the LED of the module blinks (it has a fix) but no satellite
+    reaches the Pi. With `reopen`, the reader cycles through `bauds` until
+    sentences with a valid checksum come in, and again if they stop.
+    """
+
+    def __init__(self, uart, parser, reopen=None, bauds=(115200, 9600), clock=_ticks_ms):
         """
         Initialize the GPS reader
 
         Args:
-            uart: MicroPython UART instance connected to the GPS
+            uart: MicroPython UART instance connected to the GPS, opened at bauds[0]
             parser: MicropyGPS instance for NMEA parsing
+            reopen: callable(baudrate) -> UART reopened at that speed; None
+                    keeps the given UART as is (no detection)
+            bauds: speeds to try, the expected one first
+            clock: millisecond tick source (injected by the tests)
         """
         self.uart = uart
         self.parser = parser
+        self._reopen = reopen
+        self._bauds = bauds
+        self._baud_idx = 0
+        self.baudrate = bauds[0]
+        self._clock = clock
+        self._clean = parser.clean_sentences
+        self._last_valid = clock()
+
+    def _check_baud(self):
+        """Switches to the next baud rate when no valid sentence came for a while."""
+        now = self._clock()
+        if self.parser.clean_sentences != self._clean:
+            self._clean = self.parser.clean_sentences
+            self._last_valid = now
+            return
+        if self._reopen is None or _ticks_diff(now, self._last_valid) < BAUD_PROBE_MS:
+            return
+        self._baud_idx = (self._baud_idx + 1) % len(self._bauds)
+        self.baudrate = self._bauds[self._baud_idx]
+        self.uart = self._reopen(self.baudrate)
+        self._last_valid = now
+        print(f"GPS: aucune trame NMEA valide, essai a {self.baudrate} baud")
 
     def update(self):
         """
@@ -26,13 +70,13 @@ class GPSReader:
         """
         pending = self.uart.any()
         data = self.uart.read(pending) if pending else None
-        if not data:
-            return
-        for byte in data:
-            try:
-                self.parser.update(chr(byte))
-            except (TypeError, ValueError):
-                pass
+        if data:
+            for byte in data:
+                try:
+                    self.parser.update(chr(byte))
+                except (TypeError, ValueError):
+                    pass
+        self._check_baud()
 
     def _decimal_degrees(self, coord):
         """micropyGPS coordinate ([deg, (min,) hemisphere]) -> signed decimal degrees"""

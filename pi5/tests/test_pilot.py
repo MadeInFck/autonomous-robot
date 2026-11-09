@@ -33,8 +33,9 @@ from lidar.detection.types import BoundingBox, DetectionResult, Obstacle, Obstac
 
 def make_sensor_data(lat=48.8566, lon=2.3522, heading=0, has_fix=True,
                      timestamp=None):
+    # No compass: the heading is the GPS course
     return SensorData(
-        latitude=lat, longitude=lon, heading=heading,
+        latitude=lat, longitude=lon, heading=heading, course=heading,
         has_fix=has_fix, satellites=8,
         timestamp=time.time() if timestamp is None else timestamp,
     )
@@ -307,3 +308,29 @@ class TestActivity:
         sensors.get_last_data.return_value = make_sensor_data()
         pilot = AutonomousPilot(motors, sensors, lidar, pm)
         assert pilot.get_status()["bearing"] == 0.0
+
+
+class TestHeadingSource:
+    """Which heading the pilot steers on, compass or GPS course."""
+
+    def step(self, mock_components, **fields):
+        motors, sensors, lidar, pm = mock_components
+        data = make_sensor_data()
+        for name, value in fields.items():
+            setattr(data, name, value)
+        sensors.get_last_data.return_value = data
+        pilot = AutonomousPilot(motors, sensors, lidar, pm)
+        pilot._control_step()
+        return pilot
+
+    def test_uncalibrated_compass_is_not_used(self, mock_components):
+        """The compass yaw (tens of degrees off) used to be buffered as GPS course."""
+        pilot = self.step(mock_components, imu_type='BNO085', imu_heading_valid=True,
+                          imu_calibrated=False, heading=95.0, course=12.0)
+        assert pilot._dbg_avg_heading == pytest.approx(12.0)
+
+    def test_calibrated_compass_used_as_received(self, mock_components):
+        """The mounting offset is applied once, by the receiver."""
+        pilot = self.step(mock_components, imu_type='BNO085', imu_heading_valid=True,
+                          imu_calibrated=True, heading=95.0, course=12.0)
+        assert pilot._dbg_avg_heading == pytest.approx(95.0)

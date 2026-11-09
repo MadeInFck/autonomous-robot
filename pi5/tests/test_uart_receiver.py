@@ -16,7 +16,8 @@ from uart_receiver import (
     ImuCalibrationLatch, frame_to_sensor_data,
 )
 from protocole import (
-    build_frame, FLAG_IMU_BNO085, convert_angle_to_centideg, convert_accuracy_to_raw,
+    build_frame, FLAG_IMU_BNO085, FLAG_IMU_HEADING, convert_angle_to_centideg,
+    convert_accuracy_to_raw, convert_course_to_raw,
 )
 
 
@@ -235,14 +236,15 @@ class TestResync:
 
 # ===== BNO085 frames =====
 
-def make_bno_frame(pitch=0.0, roll=0.0, accuracy=5.0, yaw=0.0, fix=1):
+def make_bno_frame(pitch=0.0, roll=0.0, accuracy=5.0, yaw=0.0, fix=1,
+                   course=0.0, live=True):
     return make_valid_frame(
         acc_x=convert_angle_to_centideg(pitch),
         acc_y=convert_angle_to_centideg(roll),
-        acc_z=0, gyr_x=0, gyr_y=0,
+        acc_z=0, gyr_x=convert_course_to_raw(course), gyr_y=0,
         gyr_z=convert_accuracy_to_raw(accuracy),
         cap=int(yaw * 100),
-        fix_quality=fix | FLAG_IMU_BNO085,
+        fix_quality=fix | FLAG_IMU_BNO085 | (FLAG_IMU_HEADING if live else 0),
     )
 
 
@@ -291,6 +293,37 @@ class TestBno085Decoding:
         assert abs(data.gyr_z + 3.5) < 1e-9
         assert data.imu_calibrated is False
         assert data.pitch == data.roll == 0.0
+
+
+class TestHeading:
+    def test_gps_course_travels_beside_the_compass(self, latch):
+        data = frame_to_sensor_data(decode(make_bno_frame(yaw=95.0, course=12.3)), latch)
+        assert data.heading == pytest.approx(95.0)
+        assert data.course == pytest.approx(12.3)
+        assert data.imu_heading_valid is True
+
+    def test_mounting_offset_applied_once_and_wrapped(self, latch):
+        frame = decode(make_bno_frame(yaw=350.0))
+        assert frame_to_sensor_data(frame, latch, 20.0).heading == pytest.approx(10.0)
+        assert frame_to_sensor_data(frame, latch, -20.0).heading == pytest.approx(330.0)
+
+    def test_silent_compass_falls_back_to_gps_course(self, latch, tmp_path):
+        """No BNO085 report: the heading is the GPS course, never trusted as a
+        compass, and a saved calibration is not forgotten for so little."""
+        assert latch.update(5.0) is True
+        frame = decode(make_bno_frame(yaw=95.0, course=12.3, accuracy=180.0, live=False))
+        data = frame_to_sensor_data(frame, latch, heading_offset_deg=30.0)
+        assert data.heading == pytest.approx(12.3)
+        assert data.imu_calibrated is False and data.imu_heading_valid is False
+        assert json.loads((tmp_path / 'cal.json').read_text())['calibrated'] is True
+
+    def test_bmi160_course_is_the_cap(self, latch):
+        data = frame_to_sensor_data(decode(make_valid_frame(cap=4520)), latch, 30.0)
+        assert data.heading == data.course == pytest.approx(45.2)
+
+    def test_course_encoding(self):
+        assert convert_course_to_raw(359.95) == 3599
+        assert convert_course_to_raw(360.0) == 0
 
 
 class TestImuCalibrationLatch:

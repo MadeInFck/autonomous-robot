@@ -24,6 +24,11 @@ _REPORT_ROTATION_VECTOR = 0x05  # absolute heading (accel+gyro+mag fusion, requi
 # Protocol command
 _CMD_SET_FEATURE = 0xFD
 
+# Report watchdog. A BNO085 that resets (brown-out, loose contact) comes back
+# with every report disabled and stays silent forever unless re-initialised.
+_STALE_MS  = 1000  # no report this long: orientation no longer valid
+_REINIT_MS = 5000  # no report this long: run the init sequence again
+
 
 class BNO085:
     """BNO085 9-DOF IMU driver — yaw/pitch/roll from onboard fusion.
@@ -55,7 +60,9 @@ class BNO085:
         self.heading_accuracy_deg = 180.0  # lower = better calibrated
         self.valid = False
 
+        self._rate_hz = rate_hz
         self._init(rate_hz)
+        self._last_report_ms = time.ticks_ms()
 
     # ── SHTP low-level ────────────────────────────────────────────
 
@@ -121,6 +128,7 @@ class BNO085:
 
     def _init(self, rate_hz: int):
         """Power-on init: drain boot packets, enable dynamic calibration, enable rotation vector."""
+        self._error = False   # a failed earlier attempt must not block this one
         time.sleep(0.8)   # BNO085 needs 600-800 ms to boot (300 ms too short)
         # Drain advertisement packets sent on CHAN_EXECUTABLE at startup
         for _ in range(15):
@@ -171,7 +179,22 @@ class BNO085:
             offset = 5 if payload[0] == 0xFB and len(payload) > 5 else 0
             if payload[offset] == _REPORT_ROTATION_VECTOR and len(payload) - offset >= 14:
                 updated = self._parse_rotation_vector(payload[offset:])
+        self._watch_reports(updated)
         return updated
+
+    def _watch_reports(self, updated: bool):
+        """Invalidates a frozen orientation, re-initialises a silent sensor."""
+        now = time.ticks_ms()
+        if updated:
+            self._last_report_ms = now
+            return
+        silent_ms = time.ticks_diff(now, self._last_report_ms)
+        if silent_ms > _STALE_MS:
+            self.valid = False   # the Pi falls back to the GPS course
+        if silent_ms > _REINIT_MS:
+            print("BNO085: aucune mesure depuis 5 s, reinitialisation")
+            self._init(self._rate_hz)
+            self._last_report_ms = time.ticks_ms()
 
     def _parse_rotation_vector(self, payload: bytes) -> bool:
         # Rotation Vector report layout (after 4-byte SHTP header already stripped):

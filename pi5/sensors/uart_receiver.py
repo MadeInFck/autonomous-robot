@@ -35,9 +35,11 @@ FRAME_LEN = 34  # STX + LEN + PAYLOAD + CRC + ETX
 
 # fix_quality byte layout:
 #   bits 0-3: GPS fix quality (0=no fix, 1=GPS, 2=DGPS)
+#   bit 6:    cap carries a live BNO085 yaw; without it cap is the GPS course
 #   bit 7:    IMU is BNO085 — acc_x/acc_y carry pitch/roll (0.01 deg),
-#             gyr_z carries heading_accuracy (0.1 deg)
+#             gyr_x the GPS course (0.1 deg), gyr_z heading_accuracy (0.1 deg)
 FIX_QUALITY_MASK = 0x0F
+FLAG_IMU_HEADING = 0x40
 FLAG_IMU_BNO085 = 0x80
 
 
@@ -71,12 +73,16 @@ class SensorData:
     altitude: float = 0.0       # meters
     speed: float = 0.0          # m/s
     speed_kmh: float = 0.0      # km/h
-    heading: float = 0.0        # degrees (BNO085 yaw, or GPS course with a BMI160)
+    # Compass heading (BNO085 yaw + mounting offset) when imu_heading_valid,
+    # otherwise the GPS course. Steer on it only when imu_calibrated.
+    heading: float = 0.0        # degrees
+    course: float = 0.0         # GPS course over ground (degrees, 0.0 at rest)
     satellites: int = 0
     has_fix: bool = False
 
     # IMU type and calibration (BNO085 only)
     imu_type: str = 'unknown'              # 'BNO085' or 'BMI160'
+    imu_heading_valid: bool = False        # BNO085 reports are coming in
     heading_accuracy_deg: float = 180.0    # BNO085: lower = better (< 10 = calibrated)
     imu_calibrated: bool = False
 
@@ -149,10 +155,14 @@ def parse_payload(payload: bytes) -> dict:
         'fix_quality': fix_quality & FIX_QUALITY_MASK,
         # Flags (high bits of the fix_quality byte)
         'imu_is_bno085': bool(fix_quality & FLAG_IMU_BNO085),
+        'imu_heading_valid': bool(fix_quality & FLAG_IMU_HEADING),
+        # GPS course over ground (cap itself with a BMI160)
+        'course': cap / 100.0,
     }
     if data['imu_is_bno085']:
         data['pitch'] = acc_x / 100.0                 # 0.01 deg -> deg
         data['roll'] = acc_y / 100.0
+        data['course'] = gyr_x / 10.0                 # 0.1 deg -> deg
         data['heading_accuracy_deg'] = gyr_z / 10.0   # 0.1 deg -> deg
     return data
 
@@ -285,8 +295,14 @@ class ImuCalibrationLatch:
         return calibrated
 
 
-def frame_to_sensor_data(frame: dict, calibration: ImuCalibrationLatch) -> SensorData:
-    """Converts a decoded frame into SensorData, timestamped now."""
+def frame_to_sensor_data(frame: dict, calibration: ImuCalibrationLatch,
+                         heading_offset_deg: float = 0.0) -> SensorData:
+    """Converts a decoded frame into SensorData, timestamped now.
+
+    heading_offset_deg corrects a BNO085 mounted rotated on the robot
+    (real heading = sensor yaw + offset). It is applied here, once, so the
+    dashboard, the map arrow and the pilot all see the same heading.
+    """
     common = dict(
         sequence=frame['seq'],
         latitude=frame['latitude'],
@@ -294,17 +310,22 @@ def frame_to_sensor_data(frame: dict, calibration: ImuCalibrationLatch) -> Senso
         altitude=frame['altitude'],
         speed=frame['vitesse_ms'],
         speed_kmh=frame['vitesse_kmh'],
-        heading=frame['cap'],
+        course=frame['course'],
         satellites=frame['satellites'],
         has_fix=frame['fix_quality'] > 0,
         timestamp=time.time(),
     )
     if frame['imu_is_bno085']:
+        live = frame['imu_heading_valid']
         accuracy = frame['heading_accuracy_deg']
         return SensorData(
             imu_type='BNO085',
+            imu_heading_valid=live,
+            heading=(frame['cap'] + heading_offset_deg) % 360 if live else frame['course'],
             heading_accuracy_deg=accuracy,
-            imu_calibrated=calibration.update(accuracy),
+            # A silent sensor proves nothing about the calibration: leave the
+            # persisted state alone, just don't trust the heading meanwhile
+            imu_calibrated=calibration.update(accuracy) if live else False,
             pitch=frame['pitch'],
             roll=frame['roll'],
             **common,
@@ -313,6 +334,7 @@ def frame_to_sensor_data(frame: dict, calibration: ImuCalibrationLatch) -> Senso
         acc_x=frame['acc_x'], acc_y=frame['acc_y'], acc_z=frame['acc_z'],
         gyr_x=frame['gyr_x'], gyr_y=frame['gyr_y'], gyr_z=frame['gyr_z'],
         imu_type='BMI160',
+        heading=frame['cap'],
         **common,
     )
 
@@ -325,16 +347,19 @@ class UARTReceiver:
     Port: /dev/ttyAMA3 (UART3 on GPIO8/9)
     """
 
-    def __init__(self, port: str = '/dev/ttyAMA3', baudrate: int = 115200):
+    def __init__(self, port: str = '/dev/ttyAMA3', baudrate: int = 115200,
+                 heading_offset_deg: float = 0.0):
         """
         Initializes the UART receiver
 
         Args:
             port: Serial port (default: /dev/ttyAMA3 for Pi5 UART3)
             baudrate: Baud rate (default: 115200)
+            heading_offset_deg: BNO085 mounting correction, see frame_to_sensor_data
         """
         self.port = port
         self.baudrate = baudrate
+        self.heading_offset_deg = heading_offset_deg
         self.serial = None
         self._running = False
         self._thread = None
@@ -411,7 +436,8 @@ class UARTReceiver:
                 while (frame := self._reader.get_frame()) is not None:
                     self._check_sequence(frame['seq'])
                     self._packets_received += 1
-                    sensor_data = frame_to_sensor_data(frame, calibration)
+                    sensor_data = frame_to_sensor_data(frame, calibration,
+                                                       self.heading_offset_deg)
                     with self._lock:
                         self._last_data = sensor_data
 

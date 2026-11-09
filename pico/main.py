@@ -31,7 +31,9 @@ from lib.protocole import (
     convert_heading_to_raw,
     convert_angle_to_centideg,
     convert_accuracy_to_raw,
-    FLAG_IMU_BNO085
+    convert_course_to_raw,
+    FLAG_IMU_BNO085,
+    FLAG_IMU_HEADING,
 )
 from lib.bmi160_raw import BMI160Raw
 from lib.gps_reader import GPSReader
@@ -50,7 +52,8 @@ PI5_BAUDRATE = 115200
 GPS_UART_ID = 1
 GPS_TX_PIN = 4
 GPS_RX_PIN = 5
-GPS_BAUDRATE = 115200
+GPS_BAUDRATE = 115200          # set on the module with u-center (April 2026)
+GPS_FALLBACK_BAUDRATE = 9600   # NEO-6M factory speed, back when its backup battery runs flat
 
 # IMU (I2C1)
 IMU_I2C_ID = 1
@@ -90,10 +93,13 @@ def init_hardware():
     # 1 KB RX buffer: a NEO-6M burst (all NMEA sentences of one fix, ~500
     # bytes) lands in ~45 ms at 115200 baud while the loop may sleep ~90 ms;
     # the 256-byte default would drop the end of it
-    uart_gps = UART(GPS_UART_ID, baudrate=GPS_BAUDRATE,
+    def open_gps_uart(baudrate):
+        return UART(GPS_UART_ID, baudrate=baudrate,
                     tx=Pin(GPS_TX_PIN), rx=Pin(GPS_RX_PIN), rxbuf=1024)
     gps_parser = MicropyGPS(local_offset=0, location_formatting='dd')
-    gps = GPSReader(uart_gps, gps_parser)
+    # Falls back to the module's factory 9600 baud if it lost its setting
+    gps = GPSReader(open_gps_uart(GPS_BAUDRATE), gps_parser,
+                    reopen=open_gps_uart, bauds=(GPS_BAUDRATE, GPS_FALLBACK_BAUDRATE))
 
     # IMU — try BNO085 first, fall back to BMI160
     print(f"IMU: I2C{IMU_I2C_ID} @ {IMU_FREQ}Hz")
@@ -152,11 +158,13 @@ def main():
                 imu_valid = imu.valid
                 # The BNO085 reuses the BMI160 fields (see lib/protocole.py,
                 # signalled to the Pi5 by FLAG_IMU_BNO085): pitch/roll in
-                # acc_x/acc_y (0.01 deg), heading accuracy in gyr_z (0.1 deg)
+                # acc_x/acc_y (0.01 deg), GPS course in gyr_x (0.1 deg),
+                # heading accuracy in gyr_z (0.1 deg)
                 acc_x_mg = convert_angle_to_centideg(imu.pitch) if imu_valid else 0
                 acc_y_mg = convert_angle_to_centideg(imu.roll) if imu_valid else 0
                 acc_z_mg = 0
-                gyr_x_raw = gyr_y_raw = 0
+                gyr_x_raw = convert_course_to_raw(gps_data['course'])
+                gyr_y_raw = 0
                 gyr_z_raw = convert_accuracy_to_raw(imu.heading_accuracy_deg if imu_valid else 180.0)
                 # Use BNO085 yaw; fall back to GPS COG until valid
                 heading   = imu.yaw if imu_valid else gps_data['course']
@@ -192,6 +200,7 @@ def main():
                 satellites=gps_data['satellites'],
                 fix_quality=(1 if gps_data['valid'] else 0)
                             | (FLAG_IMU_BNO085 if imu_type == 'BNO085' else 0)
+                            | (FLAG_IMU_HEADING if imu_type == 'BNO085' and imu_valid else 0)
             )
 
             # Send
@@ -211,7 +220,8 @@ def main():
                 gps_status = "FIX" if gps_data['valid'] else "---"
                 imu_status = "OK" if imu_valid else "ERR"
 
-                print(f"[{seq:5d}] GPS:{gps_status}({gps_data['satellites']}sat) {imu_type}:{imu_status} TX:{packets_sent}")
+                print(f"[{seq:5d}] GPS:{gps_status}({gps_data['satellites']}sat @{gps.baudrate}) "
+                      f"{imu_type}:{imu_status} TX:{packets_sent}")
                 if imu_type == 'BNO085':
                     if imu.valid:
                         cal_str = "CAL" if imu.is_calibrated() else f"acc={imu.heading_accuracy_deg:.0f}deg"

@@ -74,7 +74,6 @@ class AutonomousPilot:
         patrol_speed: int = 40,
         obstacle_distance_mm: float = 800,
         loop_patrol: bool = True,
-        heading_offset_deg: float = 45.0,
         min_quality: int = 10,
         pid_kp: float = 1.0,
         pid_ki: float = 0.05,
@@ -86,7 +85,6 @@ class AutonomousPilot:
         self.patrol = patrol_manager
         self.patrol_speed = patrol_speed
         self.loop_patrol = loop_patrol
-        self.heading_offset_deg = heading_offset_deg  # added to BNO085 heading (real = sensor + offset)
 
         # Sub-modules
         self.detector = ObstacleDetector(min_quality=min_quality)
@@ -296,10 +294,11 @@ class AutonomousPilot:
             return
         if gps.timestamp != self._last_gps_timestamp:
             self._gps_pos_buffer.append((gps.latitude, gps.longitude))
-            # GPS COG only: buffer when moving (COG is 0.0 and undefined at rest)
-            # BNO085 heading is handled separately below — no buffering needed
-            if not gps.imu_calibrated and gps.heading is not None and gps.heading > 0.1:
-                self._gps_hdg_buffer.append(gps.heading)
+            # GPS COG only: buffer when moving (COG is 0.0 and undefined at rest).
+            # gps.course, not gps.heading: with an uncalibrated BNO085 the
+            # heading is the compass yaw, tens of degrees off.
+            if not gps.imu_calibrated and gps.course > 0.1:
+                self._gps_hdg_buffer.append(gps.course)
             self._last_gps_timestamp = gps.timestamp
         if not self._gps_pos_buffer:
             return
@@ -312,7 +311,7 @@ class AutonomousPilot:
         # Heading source: BNO085 (calibrated, instant, valid at rest including 0°=North)
         # or GPS COG (smoothed circular mean, only valid while moving)
         if gps.imu_calibrated:
-            avg_heading = (gps.heading + self.heading_offset_deg) % 360
+            avg_heading = gps.heading   # mounting offset already applied by the receiver
         elif self._gps_hdg_buffer:
             sin_sum = sum(math.sin(math.radians(h)) for h in self._gps_hdg_buffer)
             cos_sum = sum(math.cos(math.radians(h)) for h in self._gps_hdg_buffer)
